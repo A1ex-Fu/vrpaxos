@@ -54,18 +54,31 @@ ReplicaAddress::operator==(const ReplicaAddress &other) const {
 
 
 Configuration::Configuration(const Configuration &c)
-    : n(c.n), f(c.f), replicas(c.replicas), hasMulticast(c.hasMulticast)
+    : n(c.n), f(c.f), hasMulticast(c.hasMulticast)
 {
     multicastAddress = NULL;
     if (hasMulticast) {
         multicastAddress = new ReplicaAddress(*c.multicastAddress);
+    }
+
+    numIdle = c.idleAddresses.size();
+    int totalAddresses = c.replicaAddresses.size() + c.witnessAddresses.size();
+
+    for (int i = 0; i < totalAddresses; i++) {
+        if (i < numIdle) {
+            idleAddresses.push_back(c.replicaAddresses[i]);
+        } else if ((idleAddresses.size() + replicaAddresses.size() + witnessAddresses.size())%2==(idleAddresses.size()%2)) {
+            replicaAddresses.push_back(c.replicaAddresses[i]);
+        } else {
+            witnessAddresses.push_back(c.replicaAddresses[i]);
+        }
     }
 }
     
 Configuration::Configuration(int n, int f,
                              std::vector<ReplicaAddress> replicas,
                              ReplicaAddress *multicastAddress)
-    : n(n), f(f), replicas(replicas)
+    : n(n), f(f)
 {
     if (multicastAddress) {
         hasMulticast = true;
@@ -75,6 +88,19 @@ Configuration::Configuration(int n, int f,
         hasMulticast = false;
         multicastAddress = NULL;
     }
+
+    int totalAddresses = replicas.size();
+
+    for (int i = 0; i < totalAddresses; i++) {
+        if (i < numIdle) {
+            idleAddresses.push_back(replicas[i]);
+        } else if ((idleAddresses.size() + replicaAddresses.size() + witnessAddresses.size())%2==(idleAddresses.size()%2)) {
+            replicaAddresses.push_back(replicas[i]);
+        } else {
+            witnessAddresses.push_back(replicas[i]);
+        }
+    }
+
 }
 
 Configuration::Configuration(std::ifstream &file)
@@ -109,6 +135,7 @@ Configuration::Configuration(std::ifstream &file)
                 Panic("Invalid argument to 'f' configuration line");
             }
         } else if (strcasecmp(cmd, "replica") == 0) {
+            //NOTE: we take replica to mean any node - just keeping it this way so we don't have to update testing infra as much
             char *arg = strtok(NULL, " \t");
             if (!arg) {
                 Panic ("'replica' configuration line requires an argument");
@@ -121,7 +148,21 @@ Configuration::Configuration(std::ifstream &file)
                 Panic("Configuration line format: 'replica host:port'");
             }
 
-            replicas.push_back(ReplicaAddress(string(host), string(port)));
+            //first numIdle nodes -> idle
+            if(idleAddresses.size() < numIdle){
+                idleAddresses.push_back(ReplicaAddress(string(host), string(port)));
+                std::cout << "\nPushed another to idle - " + std::to_string(idleAddresses.size())  + "\n";
+            }else{
+                //odd nodes -> replica
+                //even nodes -> witness
+                if((idleAddresses.size() + replicaAddresses.size() + witnessAddresses.size())%2==(idleAddresses.size()%2)){
+                    replicaAddresses.push_back(ReplicaAddress(string(host), string(port)));    
+                    std::cout << "\nPushed another to replica - " + std::to_string(replicaAddresses.size())  + "\n";
+                }else{
+                    witnessAddresses.push_back(ReplicaAddress(string(host), string(port)));
+                    std::cout << "\nPushed another to witness - " + std::to_string(witnessAddresses.size())  + "\n";
+                }
+            }
         } else if (strcasecmp(cmd, "multicast") == 0) {
             char *arg = strtok(NULL, " \t");
             if (!arg) {
@@ -143,7 +184,7 @@ Configuration::Configuration(std::ifstream &file)
         }
     }
 
-    n = replicas.size();
+    n = replicaAddresses.size() + witnessAddresses.size();
     if (n == 0) {
         Panic("Configuration did not specify any replicas");
     }
@@ -163,7 +204,28 @@ Configuration::~Configuration()
 ReplicaAddress
 Configuration::replica(int idx) const
 {
-    return replicas[idx];
+    if(idx<replicaAddresses.size()){
+        return replicaAddresses[idx];
+    }
+    throw std::invalid_argument("Index " + std::to_string(idx) + " out of range with " + std::to_string(replicaAddresses.size()) + " replica addresses");
+}
+
+ReplicaAddress
+Configuration::witness(int idx) const
+{
+    if(idx<witnessAddresses.size()){
+        return witnessAddresses[idx];
+    }
+    throw std::invalid_argument("Index " + std::to_string(idx) + " out of range with " + std::to_string(witnessAddresses.size()) + " witness addresses");
+}
+
+ReplicaAddress
+Configuration::idle(int idx) const
+{
+    if(idx<idleAddresses.size()){
+        return idleAddresses[idx];
+    }
+    throw std::invalid_argument("Index " + std::to_string(idx) + " out of range with " + std::to_string(idleAddresses.size()) + " idle addresses");
 }
 
 const ReplicaAddress *
@@ -193,7 +255,9 @@ Configuration::operator==(const Configuration &other) const
 {
     if ((n != other.n) ||
         (f != other.f) ||
-        (replicas != other.replicas) ||
+        (replicaAddresses != other.replicaAddresses) ||
+        (idleAddresses != other.idleAddresses) ||
+        (witnessAddresses != other.witnessAddresses) ||
         (hasMulticast != other.hasMulticast)) {
         return false;
     }

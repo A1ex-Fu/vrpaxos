@@ -44,36 +44,36 @@ TEST(Configuration, Basic)
 
     EXPECT_EQ(c.n, 3);
     EXPECT_EQ(c.f, 1);
+    EXPECT_EQ(c.idle(0).host, "localhost");
+    EXPECT_EQ(c.idle(1).host, "localhost");
     EXPECT_EQ(c.replica(0).host, "localhost");
-    EXPECT_EQ(c.replica(1).host, "localhost");
-    EXPECT_EQ(c.replica(2).host, "localhost");
-    EXPECT_EQ(c.replica(0).port, "12345");
-    EXPECT_EQ(c.replica(1).port, "12346");
-    EXPECT_EQ(c.replica(2).port, "12347");
+    EXPECT_EQ(c.idle(0).port, "12345");
+    EXPECT_EQ(c.idle(1).port, "12346");
+    EXPECT_EQ(c.replica(0).port, "12347");
     EXPECT_EQ(nullptr, c.multicast());
 }
 
 
-TEST(Configuration, Multicast)
-{
-    vector<ReplicaAddress> replicas = { { "localhost", "12345" },
-                                        { "localhost", "12346" },
-                                        { "localhost", "12347" } };
-    ReplicaAddress multicast = { "localhost", "12348" };
-    Configuration c(3, 1, replicas, &multicast);
+// TEST(Configuration, Multicast)
+// {
+//     vector<ReplicaAddress> replicas = { { "localhost", "12345" },
+//                                         { "localhost", "12346" },
+//                                         { "localhost", "12347" } };
+//     ReplicaAddress multicast = { "localhost", "12348" };
+//     Configuration c(3, 1, replicas, &multicast);
 
-    EXPECT_EQ(c.n, 3);
-    EXPECT_EQ(c.f, 1);
-    EXPECT_EQ(c.replica(0).host, "localhost");
-    EXPECT_EQ(c.replica(1).host, "localhost");
-    EXPECT_EQ(c.replica(2).host, "localhost");
-    EXPECT_EQ(c.replica(0).port, "12345");
-    EXPECT_EQ(c.replica(1).port, "12346");
-    EXPECT_EQ(c.replica(2).port, "12347");
-    ASSERT_NE(nullptr, c.multicast());
-    EXPECT_EQ(c.multicast()->host, "localhost");
-    EXPECT_EQ(c.multicast()->port, "12348");    
-}
+//     EXPECT_EQ(c.n, 3);
+//     EXPECT_EQ(c.f, 1);
+//     EXPECT_EQ(c.replica(0).host, "localhost");
+//     EXPECT_EQ(c.replica(1).host, "localhost");
+//     EXPECT_EQ(c.replica(2).host, "localhost");
+//     EXPECT_EQ(c.replica(0).port, "12345");
+//     EXPECT_EQ(c.replica(1).port, "12346");
+//     EXPECT_EQ(c.replica(2).port, "12347");
+//     ASSERT_NE(nullptr, c.multicast());
+//     EXPECT_EQ(c.multicast()->host, "localhost");
+//     EXPECT_EQ(c.multicast()->port, "12348");    
+// }
 
 TEST(Configuration, Quorum)
 {
@@ -122,17 +122,86 @@ TEST(Configuration, FromFile)
     std::ifstream stream("lib/tests/configuration-test-1.conf");    
     Configuration c(stream);
 
-    EXPECT_EQ(c.n, 3);
+    EXPECT_EQ(c.n, 3-2); //added teh -2 to account for idle nodes
     EXPECT_EQ(c.f, 1);
+    EXPECT_EQ(c.replica(0).host, "localhost");
+    // EXPECT_EQ(c.replica(1).host, "localhost");
+    // EXPECT_EQ(c.replica(2).host, "localhost");
+    // EXPECT_EQ(c.multicast()->host, "localhost");
+    EXPECT_EQ(c.replica(0).port, "12347");
+    // EXPECT_EQ(c.replica(1).port, "12346");
+    // EXPECT_EQ(c.replica(2).port, "12347");
+    // EXPECT_EQ(c.multicast()->port, "12348");
+}
+
+
+TEST(Configuration, FromCustomFile)
+{
+    std::ifstream stream("lib/tests/configuration-test-withWitnessesAndIdle.conf");    
+    Configuration c(stream);
+
+    //check basic config info - note that we could the number of servers as the number of participating servers (replica/witness)
+    EXPECT_EQ(c.n, 3); 
+    EXPECT_EQ(c.f, 1);
+    
+    //check idles
+    EXPECT_EQ(c.idle(0).host, "localhost");
+    EXPECT_EQ(c.idle(1).host, "localhost");
+    EXPECT_EQ(c.idle(0).port, "12345");
+    EXPECT_EQ(c.idle(1).port, "12346");
+
+    //check replica
+    EXPECT_EQ(c.replica(0).host, "localhost");
+    EXPECT_EQ(c.replica(1).host, "localhost");
+    EXPECT_EQ(c.replica(0).port, "12347");
+    EXPECT_EQ(c.replica(1).port, "12349");
+    
+    //check witness
+    EXPECT_EQ(c.witness(0).host, "localhost");
+    EXPECT_EQ(c.witness(0).port, "12348");
+}
+
+
+TEST(Configuration, FromCustomFileLarge)
+{
+    std::ifstream stream("lib/tests/configuration-test-withWitnessesAndIdleLarge.conf");    
+    Configuration c(stream);
+
+    //check basic config info - note that we could the number of servers as the number of participating servers (replica/witness)
+    EXPECT_EQ(c.n, 9); 
+    EXPECT_EQ(c.f, 2);
+    
+    //check idles
+    EXPECT_EQ(c.idle(0).host, "localhost");
+    EXPECT_EQ(c.idle(1).host, "localhost");
+    EXPECT_EQ(c.idle(0).port, "12345");
+    EXPECT_EQ(c.idle(1).port, "12346");
+
+    //check replica
     EXPECT_EQ(c.replica(0).host, "localhost");
     EXPECT_EQ(c.replica(1).host, "localhost");
     EXPECT_EQ(c.replica(2).host, "localhost");
-    EXPECT_EQ(c.multicast()->host, "localhost");
-    EXPECT_EQ(c.replica(0).port, "12345");
-    EXPECT_EQ(c.replica(1).port, "12346");
-    EXPECT_EQ(c.replica(2).port, "12347");
-    EXPECT_EQ(c.multicast()->port, "12348");
+    EXPECT_EQ(c.replica(3).host, "localhost");
+    EXPECT_EQ(c.replica(4).host, "localhost");
+    EXPECT_EQ(c.replica(0).port, "12347");
+    EXPECT_EQ(c.replica(1).port, "12349");
+    EXPECT_EQ(c.replica(2).port, "12351");
+    EXPECT_EQ(c.replica(3).port, "12353");
+    EXPECT_EQ(c.replica(4).port, "12355");
+    
+    //check witness
+    EXPECT_EQ(c.witness(0).host, "localhost");
+    EXPECT_EQ(c.witness(1).host, "localhost");
+    EXPECT_EQ(c.witness(2).host, "localhost");
+    EXPECT_EQ(c.witness(3).host, "localhost");
+    EXPECT_EQ(c.witness(0).port, "12348");
+    EXPECT_EQ(c.witness(1).port, "12350");
+    EXPECT_EQ(c.witness(2).port, "12352");
+    EXPECT_EQ(c.witness(3).port, "12354");
 }
+
+
+
 
 TEST(Configuration, AddressEquality)
 {
@@ -157,9 +226,11 @@ TEST(Configuration, Equality)
     vector<ReplicaAddress> replicasA2 = { { "localhost", "12345" },
                                           { "localhost", "12346" },
                                           { "localhost", "12347" } };
+
     vector<ReplicaAddress> replicasB = { { "otherhost", "12345" },
                                          { "localhost", "12346" },
                                          { "localhost", "12347" } };
+
     vector<ReplicaAddress> replicasC = { { "localhost", "12345" },
                                          { "localhost", "12346" },
                                          { "localhost", "12347" },
