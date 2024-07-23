@@ -37,6 +37,8 @@
 #include "lib/latency.h"
 #include "lib/message.h"
 #include "lib/transport.h"
+#include "lib/simtransport.h"
+
 
 #include <algorithm>
 #include <random>
@@ -57,6 +59,7 @@ VRReplica::VRReplica(Configuration config, int myIdx,
                      AppReplica *app)
     : Replica(config, myIdx, initialize, transport, app),
       batchSize(batchSize),
+      lastCommitteds(config.n, 0),
       log(false),
       prepareOKQuorum(config.QuorumSize()-1),
       startViewChangeQuorum(config.QuorumSize()-1),
@@ -71,6 +74,11 @@ VRReplica::VRReplica(Configuration config, int myIdx,
     this->lastRequestStateTransferOpnum = 0;
     lastBatchEnd = 0;
     batchComplete = true;
+    // isDelegated = (config.n>1);
+    isDelegated = false;
+
+    this->cleanUpTo = 0;
+
 
     if (batchSize > 1) {
         Notice("Batching enabled; batch size %d", batchSize);
@@ -78,7 +86,11 @@ VRReplica::VRReplica(Configuration config, int myIdx,
 
     this->viewChangeTimeout = new Timeout(transport, 5000, [this,myIdx]() {
             RWarning("Have not heard from leader; starting view change");
-            StartViewChange(view+1);
+			view_t step = 1;
+			while (IsWitness(configuration.GetLeaderIndex(view + step))) {
+				step++; 
+			}
+            StartViewChange(view + step);
         });
     this->nullCommitTimeout = new Timeout(transport, 1000, [this]() {
             SendNullCommit();
@@ -96,6 +108,10 @@ VRReplica::VRReplica(Configuration config, int myIdx,
         });
     this->recoveryTimeout = new Timeout(transport, 5000, [this]() {
             SendRecoveryMessages();
+        });
+
+    this->heartbeatTimeout = new Timeout(transport, 2500, [this]() {
+            SendHeartbeat();
         });
 
     _Latency_Init(&requestLatency, "request");
@@ -187,14 +203,118 @@ VRReplica::CommitUpTo(opnum_t upto)
             // result.
         }
         
-        /* Send reply */
-        auto iter = clientAddresses.find(entry->request.clientid());
-        if (iter != clientAddresses.end()) {
-            transport->SendMessage(this, *iter->second, reply);
+        if(AmLeader() || !isDelegated){
+            /* Send reply */
+            auto iter = clientAddresses.find(entry->request.clientid());
+            if (iter != clientAddresses.end()) {
+                transport->SendMessage(this, *iter->second, reply);
+            }
         }
 
         Latency_End(&executeAndReplyLatency);
     }
+}
+
+
+
+void
+VRReplica::ExecuteLog()
+{
+    while (true) {
+        Latency_Start(&executeAndReplyLatency);
+        
+        lastCommitted++;
+
+        /* Find operation in log */
+        const LogEntry *entry = log.Find(lastCommitted);
+        if (!entry) {
+            RPanic("Did not find operation " FMT_OPNUM " in log", lastCommitted);
+        }
+        
+        /* want to loop through only the committed ops - mocking execute() func from java code*/
+        bool wasChanged = log.SetStatus(lastCommitted, LOG_STATE_COMMITTED);
+        if(wasChanged){
+            log.SetStatus(lastCommitted, LOG_STATE_PREPARED);
+            break;
+        }
+
+        /* Execute it (if it was already committed)*/
+        RDebug("Executing request " FMT_OPNUM, lastCommitted);
+        ReplyMessage reply;
+        Execute(lastCommitted, entry->request, reply);
+
+        reply.set_view(entry->viewstamp.view);
+        reply.set_opnum(entry->viewstamp.opnum);
+        reply.set_clientreqid(entry->request.clientreqid());
+
+        // Store reply in the client table
+        ClientTableEntry &cte =
+            clientTable[entry->request.clientid()];
+        if (cte.lastReqId <= entry->request.clientreqid()) {
+            cte.lastReqId = entry->request.clientreqid();
+            cte.replied = true;
+            cte.reply = reply;            
+        } else {
+            // We've subsequently prepared another operation from the
+            // same client. So this request must have been completed
+            // at the client, and there's no need to record the
+            // result.
+        }
+        
+        if(AmLeader() || !isDelegated){
+            /* Send reply */
+            auto iter = clientAddresses.find(entry->request.clientid());
+            if (iter != clientAddresses.end()) {
+                transport->SendMessage(this, *iter->second, reply);
+            }
+        }
+
+        Latency_End(&executeAndReplyLatency);
+    }
+}
+
+
+int GetReplicaIdx(const TransportAddress &address) {
+    const SimulatedTransportAddress *simAddr = dynamic_cast<const SimulatedTransportAddress*>(&address);
+    
+    if ((typeid(address) == typeid(SimulatedTransportAddress)) && simAddr) {
+        int idx = simAddr->GetAddr();
+        return idx;
+    } else {
+        // address is not SimulatedTransportAddress
+        throw std::runtime_error("Invalid address type");
+    }
+}
+
+
+void
+VRReplica::SendHeartbeat()
+{
+    for(auto& pair : heartbeatCheck) {
+        if(pair.second == -1){
+            //node is dead
+            if (specpaxos::IsWitness(pair.first)){
+                isDelegated = false;
+            }
+        }else if (pair.second == 0){
+            pair.second = -1;
+            //send them a hb message to make sure they are unresponsive        
+            Heartbeat m;
+            m.set_view(view);
+            m.set_slotexecuted(GetLowestReplicaCommit());
+            
+            RNotice("Sending heartbeat");
+            if (!transport->SendMessageToReplica(this, pair.first, m)) {
+                RWarning("Failed to send heartbeat message to all replicas");
+            }
+        }else {
+            pair.second = 0;
+        }
+        
+        
+    }
+
+    heartbeatTimeout->Reset();
 }
 
 void
@@ -218,6 +338,7 @@ VRReplica::SendPrepareOKs(opnum_t oldLastOp)
         reply.set_view(view);
         reply.set_opnum(i);
         reply.set_replicaidx(myIdx);
+        reply.set_lastcommitted(lastCommitted);
 
         RDebug("Sending PREPAREOK " FMT_VIEWSTAMP " for new uncommitted operation",
                reply.view(), reply.opnum());
@@ -338,9 +459,9 @@ VRReplica::UpdateClientTable(const Request &req)
 {
     ClientTableEntry &entry = clientTable[req.clientid()];
 
-    ASSERT(entry.lastReqId <= req.clientreqid());
+    // ASSERT(entry.lastReqId <= req.clientreqid());
 
-    if (entry.lastReqId == req.clientreqid()) {
+    if (entry.lastReqId >= req.clientreqid()) {
         return;
     }
 
@@ -357,6 +478,10 @@ VRReplica::ResendPrepare()
         return;
     }
     RNotice("Resending prepare");
+    if(isDelegated && AmLeader()){
+        RNotice("Did NOT resend prepare because the leader is delegated");
+        return;
+    }
     if (!(transport->SendMessageToAll(this, lastPrepare))) {
         RWarning("Failed to ressend prepare message to all replicas");
     }
@@ -378,6 +503,7 @@ VRReplica::CloseBatch()
     p.set_view(view);
     p.set_opnum(lastOp);
     p.set_batchstart(batchStart);
+    p.set_cleanupto(GetLowestReplicaCommit()); 
 
     for (opnum_t i = batchStart; i <= lastOp; i++) {
         Request *r = p.add_request();
@@ -387,17 +513,33 @@ VRReplica::CloseBatch()
         ASSERT(entry->viewstamp.opnum == i);
         *r = entry->request;
     }
-    lastPrepare = p;
 
-    if (!(transport->SendMessageToAll(this, p))) {
-        RWarning("Failed to send prepare message to all replicas");
+    lastPrepare = p;
+    if(!isDelegated) {
+        if (!(transport->SendMessageToAll(this, p))) {
+            RWarning("Failed to send prepare message to all replicas");
+        }
     }
     lastBatchEnd = lastOp;
     batchComplete = false;
     
     resendPrepareTimeout->Reset();
     closeBatchTimeout->Stop();
+    if (p.cleanupto() > cleanUpTo) {
+		// Clean log up to the lowest committed entry by any replica
+		cleanUpTo = p.cleanupto();
+		CleanLog(); 
+	} else if (p.cleanupto() < cleanUpTo) {
+		RPanic("cleanUpTo decreased! Got " FMT_OPNUM ", had " FMT_OPNUM, 
+				p.cleanupto(), cleanUpTo);
+	}
+
 }
+
+
+
+
+
 
 void
 VRReplica::ReceiveMessage(const TransportAddress &remote,
@@ -415,7 +557,15 @@ VRReplica::ReceiveMessage(const TransportAddress &remote,
     static StartViewMessage startView;
     static RecoveryMessage recovery;
     static RecoveryResponseMessage recoveryResponse;
-    
+    static WitnessDecision witnessDecision;
+    static Heartbeat heartbeat;
+    static HeartbeatReply heartbeatReply;
+
+    if(AmLeader()){
+        heartbeatCheck[GetReplicaIdx(remote)] = 1;
+    }
+
+
     if (type == request.GetTypeName()) {
         request.ParseFromString(data);
         HandleRequest(remote, request);
@@ -452,8 +602,20 @@ VRReplica::ReceiveMessage(const TransportAddress &remote,
     } else if (type == recoveryResponse.GetTypeName()) {
         recoveryResponse.ParseFromString(data);
         HandleRecoveryResponse(remote, recoveryResponse);
+    } else if (type == witnessDecision.GetTypeName()) {
+        RWarning("Got WitnessDecision");
+        witnessDecision.ParseFromString(data);
+        HandleWitnessDecision(remote, witnessDecision);
+    } else if (type == heartbeat.GetTypeName()) {
+        RWarning("Got Heartbeat");
+        heartbeat.ParseFromString(data);
+        HandleHeartbeat(remote, heartbeat);
+    } else if (type == heartbeatReply.GetTypeName()) {
+        RWarning("Got HeartbeatReply");
+        heartbeatReply.ParseFromString(data);
+        HandleHeartbeatReply(remote, heartbeatReply);
     } else {
-        RPanic("Received unexpected message type in VR proto: %s",
+        RPanic("Received unexpected message type in VR replica: %s",
               type.c_str());
     }
 }
@@ -462,6 +624,7 @@ void
 VRReplica::HandleRequest(const TransportAddress &remote,
                          const RequestMessage &msg)
 {
+
     viewstamp_t v;
     Latency_Start(&requestLatency);
     
@@ -472,11 +635,20 @@ VRReplica::HandleRequest(const TransportAddress &remote,
     }
 
     if (!AmLeader()) {
-        RDebug("Ignoring request because I'm not the leader");
+        RDebug("Non-leader replica has request");
+        
+        PaxosAck paxosAck;
+        paxosAck.set_replicaidx(myIdx);
+        Request *r = paxosAck.add_request();
+        *r = msg.req();
+
+        if (!(transport->SendMessage(this, remote, paxosAck)))
+            Warning("Failed to send paxosAck message");
+
+
         Latency_EndType(&requestLatency, 'i');
         return;        
     }
-
     // Save the client's address
     clientAddresses.erase(msg.req().clientid());
     clientAddresses.insert(
@@ -514,6 +686,7 @@ VRReplica::HandleRequest(const TransportAddress &remote,
         }
     }
 
+
     // Update the client table
     UpdateClientTable(msg.req());
 
@@ -523,7 +696,7 @@ VRReplica::HandleRequest(const TransportAddress &remote,
     LeaderUpcall(lastCommitted, msg.req().op(), replicate, res);
     ClientTableEntry &cte =
         clientTable[msg.req().clientid()];
-
+    
     // Check whether this request should be committed to replicas
     if (!replicate) {
         RDebug("Executing request failed. Not committing to replicas");
@@ -565,6 +738,7 @@ VRReplica::HandleRequest(const TransportAddress &remote,
 
         nullCommitTimeout->Reset();
         Latency_End(&requestLatency);
+        
     }
 }
 
@@ -593,6 +767,16 @@ void
 VRReplica::HandlePrepare(const TransportAddress &remote,
                          const PrepareMessage &msg)
 {
+
+    if (msg.view() == this->view && this->status == STATUS_VIEW_CHANGE) {
+		if (AmLeader()) {
+			RPanic("Unexpected PREPARE: I'm the leader of this view");
+		}
+        RequestStateTransfer();
+        pendingPrepares.push_back(std::pair<TransportAddress *, PrepareMessage>(remote.clone(), msg));
+        return;
+    }
+
     RDebug("Received PREPARE <" FMT_VIEW "," FMT_OPNUM "-" FMT_OPNUM ">",
            msg.view(), msg.batchstart(), msg.opnum());
 
@@ -616,6 +800,22 @@ VRReplica::HandlePrepare(const TransportAddress &remote,
         RPanic("Unexpected PREPARE: I'm the leader of this view");
     }
 
+    if (msg.cleanupto() > lastCommitted) {
+		RPanic("Asking me to clean an entry after my lastCommitted!");
+	}
+
+	if (msg.cleanupto() > cleanUpTo) {
+		// Clean log up to the lowest committed entry by any replica
+		cleanUpTo = msg.cleanupto();
+		CleanLog(); 
+	} else if (msg.cleanupto() < cleanUpTo) {
+		// A node can see a lower cleanUpTo if the leader fell behind: when it reconstructs
+		// state, it will use its own cleanUpTo as a "safe" value, and will update it 
+		// later once it hears from all the other replicas. 
+		RWarning("cleanUpTo decreased! Got " FMT_OPNUM ", had " FMT_OPNUM, 
+				msg.cleanupto(), cleanUpTo);
+	}
+
     ASSERT(msg.batchstart() <= msg.opnum());
     ASSERT_EQ(msg.opnum()-msg.batchstart()+1, (unsigned)msg.request_size());
               
@@ -628,6 +828,7 @@ VRReplica::HandlePrepare(const TransportAddress &remote,
         reply.set_view(msg.view());
         reply.set_opnum(msg.opnum());
         reply.set_replicaidx(myIdx);
+        reply.set_lastcommitted(lastCommitted);
         if (!(transport->SendMessageToReplica(this,
                                               configuration.GetLeaderIndex(view),
                                               reply))) {
@@ -661,6 +862,7 @@ VRReplica::HandlePrepare(const TransportAddress &remote,
     reply.set_view(msg.view());
     reply.set_opnum(msg.opnum());
     reply.set_replicaidx(myIdx);
+    reply.set_lastcommitted(lastCommitted);
     
     if (!(transport->SendMessageToReplica(this,
                                           configuration.GetLeaderIndex(view),
@@ -697,10 +899,17 @@ VRReplica::HandlePrepareOK(const TransportAddress &remote,
         RWarning("Ignoring PREPAREOK because I'm not the leader");
         return;        
     }
+
+    try {
+		opnum_t replicaLastRecordedCommit = lastCommitteds.at(msg.replicaidx());
+		ASSERT(replicaLastRecordedCommit <= msg.lastcommitted());
+		lastCommitteds.at(msg.replicaidx()) = msg.lastcommitted();
+	} catch (std::out_of_range const& exc) {
+		RPanic("Tried to access an element that was out of range in lastCommitteds!");
+	}
     
     viewstamp_t vs = { msg.view(), msg.opnum() };
-    if (auto msgs =
-        (prepareOKQuorum.AddAndCheckForQuorum(vs, msg.replicaidx(), msg))) {
+    if (auto msgs = prepareOKQuorum.AddAndCheckForQuorum(vs, msg.replicaidx(), msg, false)) {
         /*
          * We have a quorum of PrepareOK messages for this
          * opnumber. Execute it and all previous operations.
@@ -711,6 +920,7 @@ VRReplica::HandlePrepareOK(const TransportAddress &remote,
          * This also notifies the client of the result.
          */
         CommitUpTo(msg.opnum());
+        lastCommitteds.at(myIdx) = lastCommitted;
 
         if (msgs->size() >= (unsigned)configuration.QuorumSize()) {
             return;
@@ -869,10 +1079,12 @@ VRReplica::HandleStateTransfer(const TransportAddress &remote,
             viewstamp_t vs = { newEntry.view(), newEntry.opnum() };
             log.Append(vs, newEntry.request(), LOG_STATE_PREPARED);
         }
+        //TODO figure out why we need this - from vrw
+        UpdateClientTable(newEntry.request());
     }
     
 
-    if (msg.view() > view) {
+    if (msg.view() > view || (msg.view() == view && status == STATUS_VIEW_CHANGE)){
         EnterView(msg.view());
     }
 
@@ -919,7 +1131,7 @@ VRReplica::HandleStartViewChange(const TransportAddress &remote,
     if (auto msgs =
         startViewChangeQuorum.AddAndCheckForQuorum(msg.view(),
                                                    msg.replicaidx(),
-                                                   msg)) {
+                                                   msg, false)) {
         int leader = configuration.GetLeaderIndex(view);
         // Don't try to send a DoViewChange message to ourselves
         if (leader != myIdx) {            
@@ -938,6 +1150,7 @@ VRReplica::HandleStartViewChange(const TransportAddress &remote,
                     return a.second.lastcommitted() < b.second.lastcommitted();
                 })->second.lastcommitted();
             minCommitted = std::min(minCommitted, lastCommitted);
+            minCommitted = std::min(minCommitted, GetLowestReplicaCommit());
             
             log.Dump(minCommitted,
                      dvc.mutable_entries());
@@ -981,22 +1194,26 @@ VRReplica::HandleDoViewChange(const TransportAddress &remote,
     
     auto msgs = doViewChangeQuorum.AddAndCheckForQuorum(msg.view(),
                                                         msg.replicaidx(),
-                                                        msg);
+                                                        msg, isDelegated);
     if (msgs != NULL) {
         // Find the response with the most up to date log, i.e. the
         // one with the latest viewstamp
         view_t latestView = log.LastViewstamp().view;
         opnum_t latestOp = log.LastViewstamp().opnum;
+		opnum_t highestCommitted = lastCommitted; 
+        DoViewChangeMessage latestMsgObj;
         DoViewChangeMessage *latestMsg = NULL;
 
         for (auto kv : *msgs) {
             DoViewChangeMessage &x = kv.second;
+			highestCommitted = std::max(x.lastcommitted(), highestCommitted); 
             if ((x.lastnormalview() > latestView) ||
                 (((x.lastnormalview() == latestView) &&
                   (x.lastop() > latestOp)))) {
                 latestView = x.lastnormalview();
                 latestOp = x.lastop();
-                latestMsg = &x;
+				latestMsgObj = kv.second;
+                latestMsg = &latestMsgObj;
             }
         }
 
@@ -1020,6 +1237,9 @@ VRReplica::HandleDoViewChange(const TransportAddress &remote,
                 log.RemoveAfter(latestMsg->lastop()+1);
                 log.Install(latestMsg->entries().begin(),
                             latestMsg->entries().end());
+                for (auto entry : latestMsg->entries()) {
+					UpdateClientTable(entry.request()); 
+				}
             }
         } else {
             RDebug("My log is most current, lastnormalview=" FMT_VIEW " lastop=" FMT_OPNUM,
@@ -1047,15 +1267,19 @@ VRReplica::HandleDoViewChange(const TransportAddress &remote,
             })->second.lastcommitted();
         opnum_t minCommitted = std::min(minCommittedSVC, minCommittedDVC);
         minCommitted = std::min(minCommitted, lastCommitted);
+        minCommitted = std::min(minCommitted, GetLowestReplicaCommit());
+
+        lastOp = latestOp;
 
         EnterView(msg.view());
 
         ASSERT(AmLeader());
         
-        lastOp = latestOp;
-        if (latestMsg != NULL) {
-            CommitUpTo(latestMsg->lastcommitted());
-        }
+		CommitUpTo(highestCommitted);
+
+        for (size_t i = 0; i < lastCommitteds.size(); i++) {
+			lastCommitteds[i] = cleanUpTo;
+		}
 
         // Send a STARTVIEW message with the new log
         StartViewMessage sv;
@@ -1105,6 +1329,9 @@ VRReplica::HandleStartView(const TransportAddress &remote,
         log.RemoveAfter(msg.lastop()+1);
         log.Install(msg.entries().begin(),
                     msg.entries().end());        
+        for (auto entry : msg.entries()) {
+			UpdateClientTable(entry.request());
+		}
     }
 
 
@@ -1164,7 +1391,7 @@ VRReplica::HandleRecoveryResponse(const TransportAddress &remote,
 
     auto msgs = recoveryResponseQuorum.AddAndCheckForQuorum(msg.nonce(),
                                                             msg.replicaidx(),
-                                                            msg);
+                                                            msg, false);
     if (msgs != NULL) {
         view_t highestView = 0;
         for (const auto &kv : *msgs) {
@@ -1192,6 +1419,123 @@ VRReplica::HandleRecoveryResponse(const TransportAddress &remote,
         CommitUpTo(leaderResponse->second.lastcommitted());
     }
 }
+
+
+
+void
+VRReplica::HandleWitnessDecision(const TransportAddress &remote,
+                                  const WitnessDecision &msg)
+{
+    Assert(specpaxos::IsWitness(msg.replicaidx()));
+    RDebug("Received WitnessDecision from witness %d",
+           msg.replicaidx());
+
+
+    if (msg.view() > view) {
+        RequestStateTransfer();
+        return;
+    }
+    viewstamp_t v;
+    ++this->lastOp;
+    v.view = this->view;
+    v.opnum = msg.opnum();
+    Assert(this->lastOp == v.opnum);
+
+
+    /* Add operations to the log */
+    opnum_t op = lastOp--;
+    for (auto &req : msg.request()) {
+        op++;
+        if (op <= lastOp) {
+            continue;
+        }
+        this->lastOp++;
+        log.Append(v, req, LOG_STATE_PREPARED);
+        UpdateClientTable(req);
+    }
+
+
+    if(AmLeader()){
+        ExecuteLog();
+    }else{
+        //should also be the same as elseif case in handledecision
+        CommitUpTo(this->lastOp);
+    }
+}
+
+
+void
+VRReplica::HandleHeartbeat(const TransportAddress &remote,
+                                  const Heartbeat &msg)
+{
+    Assert(!AmLeader());
+
+    RDebug("Received Heartbeat from leader %d",
+           msg.slotexecuted());
+
+    //TODO maybe add log updates? need to decide whether to keep state transfers or not
+    ExecuteLog();
+
+    HeartbeatReply reply;
+    reply.set_view(view);
+    reply.set_slotout(lastCommitted);
+
+    RDebug("Sending HBReply " FMT_VIEWSTAMP,
+            reply.view(), reply.slotout());
+
+    if (!(transport->SendMessageToReplica(this,
+                                            configuration.GetLeaderIndex(view),
+                                            reply))) {
+        RWarning("Failed to send HBReply message to leader");
+    }
+}
+
+
+
+
+void
+VRReplica::HandleHeartbeatReply(const TransportAddress &remote,
+                                  const HeartbeatReply &msg)
+{
+    Assert(AmLeader());
+
+    RDebug("Received Heartbeat from replica %d",
+           msg.slotout());
+
+
+}
+
+
+
+
+// void
+// VRReplica::GarbageCollect(int slotExecuted)
+// {
+// 	RNotice("Cleaning up to " FMT_OPNUM, slotExecuted);
+// 	log.RemoveUpTo(slotExecuted);
+// }
+
+
+opnum_t VRReplica::GetLowestReplicaCommit()
+{
+    opnum_t lowest = 0;
+    if (!lastCommitteds.empty()) {
+        *std::min_element(lastCommitteds.begin(), lastCommitteds.end()); 
+    }
+    return lowest;
+}
+
+
+void
+VRReplica::CleanLog()
+{
+	/* 
+	 * Truncate the log up to the current cleanUpTo value.
+	 */
+	RNotice("Cleaning up to " FMT_OPNUM, cleanUpTo);
+	log.RemoveUpTo(cleanUpTo);
+}
+
 
 } // namespace specpaxos::vr
 } // namespace specpaxos

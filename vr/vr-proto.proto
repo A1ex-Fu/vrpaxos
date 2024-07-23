@@ -26,12 +26,14 @@ message PrepareMessage {
     required uint64 opnum = 2;
     required uint64 batchstart = 3;
     repeated Request request = 4;
+    required uint64 cleanUpTo = 5;
 }
 
 message PrepareOKMessage {
     required uint64 view = 1;
     required uint64 opnum = 2;
     required uint32 replicaIdx = 3;
+    required uint64 lastCommitted = 4;
 }
 
 message CommitMessage {
@@ -76,7 +78,7 @@ message DoViewChangeMessage {
     required uint64 lastOp = 3;
     required uint64 lastCommitted = 4;
     repeated LogEntry entries = 5;
-    required uint32 replicaIdx = 6;    
+    required uint32 replicaIdx = 6;
 }
 
 message StartViewMessage {
@@ -112,4 +114,37 @@ message RecoveryResponseMessage {
     optional uint64 lastOp = 4;
     optional uint64 lastCommitted = 5;
     required uint32 replicaIdx = 6;
+}
+
+
+message WitnessDecision {
+    required uint64 view = 1;
+    required uint64 opnum = 2;
+    required uint32 replicaIdx = 3;
+    repeated specpaxos.Request request = 4;
+}
+
+
+message PaxosAck {
+    required uint32 replicaIdx = 1;
+    repeated specpaxos.Request request = 2;
+}
+
+
+message ChainMessage {
+    required uint64 view = 1;
+    required uint64 opnum = 2;
+    required uint32 replicaIdx = 3;
+    repeated specpaxos.Request request = 4;
+}
+
+
+message Heartbeat {
+    required uint64 view = 1;
+    required uint64 slotExecuted = 2;
+}
+
+message HeartbeatReply {
+    required uint64 view = 1;
+    required uint64 slotOut = 2;
 }

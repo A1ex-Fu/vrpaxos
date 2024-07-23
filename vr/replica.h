@@ -41,6 +41,7 @@
 #include <map>
 #include <memory>
 #include <list>
+#include "lib/transport.h"
 
 namespace specpaxos {
 namespace vr {
@@ -51,7 +52,7 @@ public:
     VRReplica(Configuration config, int myIdx, bool initialize,
               Transport *transport, int batchSize,
               AppReplica *app);
-    ~VRReplica();
+    ~VRReplica() noexcept;
     
     void ReceiveMessage(const TransportAddress &remote,
                         const string &type, const string &data);
@@ -65,11 +66,17 @@ private:
     uint64_t recoveryNonce;
     std::list<std::pair<TransportAddress *,
                         proto::PrepareMessage> > pendingPrepares;
+
     proto::PrepareMessage lastPrepare;
     int batchSize;
     opnum_t lastBatchEnd;
     bool batchComplete;
-    
+    bool isDelegated;
+    std::map<uint32_t, uint32_t> heartbeatCheck;
+    opnum_t cleanUpTo;
+	std::vector<opnum_t> lastCommitteds; 
+
+
     Log log;
     std::map<uint64_t, std::unique_ptr<TransportAddress> > clientAddresses;
     struct ClientTableEntry
@@ -91,6 +98,7 @@ private:
     Timeout *resendPrepareTimeout;
     Timeout *closeBatchTimeout;
     Timeout *recoveryTimeout;
+    Timeout *heartbeatTimeout;
 
     Latency_t requestLatency;
     Latency_t executeAndReplyLatency;
@@ -98,6 +106,8 @@ private:
     uint64_t GenerateNonce() const;
     bool AmLeader() const;
     void CommitUpTo(opnum_t upto);
+    void ExecuteLog();
+    
     void SendPrepareOKs(opnum_t oldLastOp);
     void SendRecoveryMessages();
     void RequestStateTransfer();
@@ -107,6 +117,9 @@ private:
     void UpdateClientTable(const Request &req);
     void ResendPrepare();
     void CloseBatch();
+    opnum_t GetLowestReplicaCommit();
+    void CleanLog();
+    void SendHeartbeat();
     
     void HandleRequest(const TransportAddress &remote,
                        const proto::RequestMessage &msg);
@@ -132,7 +145,13 @@ private:
     void HandleRecovery(const TransportAddress &remote,
                         const proto::RecoveryMessage &msg);
     void HandleRecoveryResponse(const TransportAddress &remote,
-                                const proto::RecoveryResponseMessage &msg);
+                        const proto::RecoveryResponseMessage &msg);
+    void HandleWitnessDecision(const TransportAddress &remote,
+                        const proto::WitnessDecision &msg);
+    void HandleHeartbeat(const TransportAddress &remote,
+                        const proto::Heartbeat &msg);
+    void HandleHeartbeatReply(const TransportAddress &remote,
+                        const proto::HeartbeatReply &msg);
 };
 
 } // namespace specpaxos::vr
