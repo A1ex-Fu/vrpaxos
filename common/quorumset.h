@@ -81,8 +81,38 @@ public:
         }    
     }
 
+/**
+ * @brief instead of just checking whether the node has acheived a majority of 
+ * votes, it also checks that a vote from one of the witnesses was received
+ * 
+ * @param vs - current viewstamp
+ * @return const std::map<int, MSGTYPE>* - votes received
+ */
     const std::map<int, MSGTYPE> *
-    AddAndCheckForQuorum(IDTYPE vs, int replicaIdx, const MSGTYPE &msg)
+    CheckForDelegatedQuorum(IDTYPE vs)
+    {
+        std::map<int, MSGTYPE> &vsmessages = messages[vs];
+
+        int count = 0;
+        bool hasWitnessVote = false;
+        for (const auto &entry : vsmessages) {
+
+            if (specpaxos::IsWitness(entry.first)) {
+                hasWitnessVote = true;                
+            }
+            count++;
+        }
+
+        if (hasWitnessVote && (count >= (numRequired/2))) {
+            return &vsmessages;
+        }else{
+            return NULL;
+        }
+    }
+
+
+    const std::map<int, MSGTYPE> *
+    AddAndCheckForQuorum(IDTYPE vs, int replicaIdx, const MSGTYPE &msg, bool isDelegated)
     {
         std::map<int, MSGTYPE> &vsmessages = messages[vs];
         if (vsmessages.find(replicaIdx) != vsmessages.end()) {
@@ -96,7 +126,9 @@ public:
         }
 
         vsmessages[replicaIdx] = msg;
-        
+        if(isDelegated){
+            return CheckForDelegatedQuorum(vs);
+        }
         return CheckForQuorum(vs);
     }
 
