@@ -1515,7 +1515,6 @@ VRReplica::HandleHeartbeat(const TransportAddress &remote,
 
     if (status != STATUS_NORMAL) {
         RNotice("Ignoring heartbeat due to abnormal status");
-        Latency_EndType(&requestLatency, 'i');
         return;
     }
 
@@ -1552,6 +1551,11 @@ void
 VRReplica::HandleHeartbeatReply(const TransportAddress &remote,
                                   const HeartbeatReply &msg)
 {
+
+    if (status != STATUS_NORMAL) {
+        RNotice("Ignoring heartbeatreply due to abnormal status");
+        return;
+    }
     Assert(AmLeader());
 
     const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
