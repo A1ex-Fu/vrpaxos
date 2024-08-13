@@ -56,11 +56,15 @@ public:
     virtual void ReceiveMessage(const TransportAddress &remote,
                                 const string &type, const string &data);
 
+    
+
 protected:
     int view;
     int opnumber;
     uint64_t lastReqId;
-
+    bool gotAck;
+    std::vector<int> replicas;
+    
     struct PendingRequest
     {
         string request;
@@ -72,6 +76,9 @@ protected:
             : request(request), clientReqId(clientReqId),
               continuation(continuation) { }
     };
+
+    proto::ReplyMessage* msg;
+
     PendingRequest *pendingRequest;
     PendingRequest *pendingUnloggedRequest;
     Timeout *requestTimeout;
@@ -83,7 +90,10 @@ protected:
                      const proto::ReplyMessage &msg);
     void HandleUnloggedReply(const TransportAddress &remote,
                              const proto::UnloggedReplyMessage &msg);
+    void HandlePaxosAck(const TransportAddress &remote,
+                              const proto::PaxosAck &msg);
     void UnloggedRequestTimeoutCallback();
+    
 };
 
 } // namespace specpaxos::vr

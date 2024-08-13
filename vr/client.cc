@@ -35,6 +35,9 @@
 #include "lib/transport.h"
 #include "vr/client.h"
 #include "vr/vr-proto.pb.h"
+#include "lib/simtransport.h"
+#include "common/replica.h"
+
 
 namespace specpaxos {
 namespace vr {
@@ -44,9 +47,12 @@ VRClient::VRClient(const Configuration &config,
                    uint64_t clientid)
     : Client(config, transport, clientid)
 {
+    msg = NULL;
     pendingRequest = NULL;
     pendingUnloggedRequest = NULL;
     lastReqId = 0;
+    gotAck = false; 
+    view = 0;
     
     requestTimeout = new Timeout(transport, 7000, [this]() {
             ResendRequest();
@@ -64,6 +70,7 @@ VRClient::~VRClient()
     if (pendingUnloggedRequest) {
         delete pendingUnloggedRequest;
     }
+    
     delete requestTimeout;
     delete unloggedRequestTimeout;
 }
@@ -80,6 +87,8 @@ VRClient::Invoke(const string &request,
     ++lastReqId;
     uint64_t reqId = lastReqId;
     pendingRequest = new PendingRequest(request, reqId, continuation);
+    this->gotAck = false;
+    replicas.clear();
 
     SendRequest();
 }
@@ -98,7 +107,7 @@ VRClient::InvokeUnlogged(int replicaIdx,
 
     ++lastReqId;
     uint64_t reqId = lastReqId;
-
+    
     pendingUnloggedRequest = new PendingRequest(request, reqId, continuation);
     pendingUnloggedRequest->timeoutContinuation = timeoutContinuation;
 
@@ -121,17 +130,17 @@ VRClient::SendRequest()
     reqMsg.mutable_req()->set_op(pendingRequest->request);
     reqMsg.mutable_req()->set_clientid(clientid);
     reqMsg.mutable_req()->set_clientreqid(pendingRequest->clientReqId);
+    reqMsg.set_reqstr(pendingRequest->request);
     
+    // Warning("sending message %s to all", reqMsg.reqstr().c_str());
     // XXX Try sending only to (what we think is) the leader first
     transport->SendMessageToAll(this, reqMsg);
-    
     requestTimeout->Reset();
 }
 
 void
 VRClient::ResendRequest()
 {
-    Warning("Client timeout; resending request");
     SendRequest();
 }
 
@@ -143,6 +152,12 @@ VRClient::ReceiveMessage(const TransportAddress &remote,
 {
     static proto::ReplyMessage reply;
     static proto::UnloggedReplyMessage unloggedReply;
+    static proto::PaxosAck paxosAck;
+
+    const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
+    int srcAddr = simRemote.GetAddr();
+
+    // Warning("Received %s message in VR Client from %d", type.c_str(), srcAddr);
     
     if (type == reply.GetTypeName()) {
         reply.ParseFromString(data);
@@ -150,6 +165,9 @@ VRClient::ReceiveMessage(const TransportAddress &remote,
     } else if (type == unloggedReply.GetTypeName()) {
         unloggedReply.ParseFromString(data);
         HandleUnloggedReply(remote, unloggedReply);
+    } else if (type == paxosAck.GetTypeName()) {
+        paxosAck.ParseFromString(data);
+        HandlePaxosAck(remote, paxosAck);
     } else {
         Client::ReceiveMessage(remote, type, data);
     }
@@ -160,23 +178,39 @@ VRClient::HandleReply(const TransportAddress &remote,
                       const proto::ReplyMessage &msg)
 {
     if (pendingRequest == NULL) {
-        Warning("Received reply when no request was pending");
         return;
     }
     if (msg.clientreqid() != pendingRequest->clientReqId) {
-        Warning("Received reply for a different request");
+        Warning("Received reply for a different request %s\n    was expecting: %d\n    got: %d", msg.reply().c_str(), pendingRequest->clientReqId, msg.clientreqid());
         return;
     }
 
     Debug("Client received reply");
 
-    requestTimeout->Stop();
+    this->msg = new specpaxos::vr::proto::ReplyMessage(msg);
+    if(this->gotAck && pendingRequest != NULL){
+        requestTimeout->Stop();
+        PendingRequest *req = pendingRequest;
+        pendingRequest = NULL;
+        req->continuation(req->request, this->msg->reply());
+        this->msg = NULL;
+        delete req;
+    }else{
+        // Warning("in handle reply for %s but no ack", this->msg->reply().c_str());
+        // if(replicas.size()>0){
+        //     string str;
+        //     for (size_t i = 0; i < replicas.size(); ++i) {
+        //         if (i != 0) {
+        //             str += ",";
+        //         }
+        //         str += replicas[i];
+        //     }
+           
+        //     Warning("Waiting for acks from: %s", str);
+        // }
+        
+    }
 
-    PendingRequest *req = pendingRequest;
-    pendingRequest = NULL;
-    
-    req->continuation(req->request, msg.reply());
-    delete req;
 }
 
 void
@@ -197,6 +231,50 @@ VRClient::HandleUnloggedReply(const TransportAddress &remote,
     
     req->continuation(req->request, msg.reply());
     delete req;
+}
+
+void
+VRClient::HandlePaxosAck(const TransportAddress &remote,
+                              const proto::PaxosAck &msg)
+{
+    Debug("Client received paxosAck");
+
+    if (pendingRequest==NULL || msg.clientreqid() != pendingRequest->clientReqId) {
+        return;
+    }
+
+    if(replicas.size()==0) {
+        //add in replicas based on config from replica
+        for(int i =0; i<msg.n(); i++){
+            if(specpaxos::IsReplica(i)){
+                replicas.push_back(i);
+            }
+        }
+    }
+
+    const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
+    int srcAddr = simRemote.GetAddr();
+
+    auto it = std::find(replicas.begin(), replicas.end(), srcAddr); 
+    if (it != replicas.end()) { 
+        replicas.erase(it); 
+        // Warning("got ack from %d - still have %d replicas", srcAddr, replicas.size());
+    } 
+
+    if (replicas.size()==1){
+        this->gotAck = true;
+    }
+
+    if(this->gotAck && this->msg != NULL && pendingRequest != NULL){
+        requestTimeout->Stop();
+        // Warning("finished with %s with id %d in ack\n\n\n", this->msg->reply().c_str(), pendingRequest->clientReqId);
+        PendingRequest *req = pendingRequest;
+        pendingRequest = NULL;
+        req->continuation(req->request, this->msg->reply());
+        this->msg = NULL;
+        delete req;
+    }
+
 }
 
 void

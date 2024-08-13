@@ -259,3 +259,31 @@ TAGS:
 	$(call trace,ETAGS,headers,\
 	  etags -a $(foreach dir,$(sort $(dir $(SRCS) $(TEST_SRCS))),\
 		     $(wildcard $(dir)*.h)))
+
+
+
+.PHONY: valgrind-test
+valgrind-test: $(TEST_BINS)
+	@for test in $(TEST_BINS); do \
+		echo "Running $$test with Valgrind..."; \
+		valgrind --leak-check=full $$test; \
+	done
+
+.PHONY: gdb-test
+gdb-test: $(TEST_BINS)
+	@for test in $(TEST_BINS); do \
+		echo "Running $$test with Valgrind..."; \
+		gdb $$test; \
+	done
+
+
+.PHONY: gdb-vr-test
+gdb-vr-test: ./vr/tests/vr-test
+	@echo "Running vr-test with gdb..."
+	@gdb ./vr/tests/vr-test
+
+.PHONY: valgrind-vr-test
+valgrind-vr-test: ./vr/tests/vr-test
+	valgrind --leak-check=full --track-origins=yes ./vr/tests/vr-test
+
+

@@ -74,8 +74,9 @@ VRReplica::VRReplica(Configuration config, int myIdx,
     this->lastRequestStateTransferOpnum = 0;
     lastBatchEnd = 0;
     batchComplete = true;
-    // isDelegated = (config.n>1);
-    isDelegated = false;
+    isDelegated = (config.n>1);
+    //change for replica only TESTING
+    // isDelegated = false;
 
     this->cleanUpTo = 0;
 
@@ -101,7 +102,9 @@ VRReplica::VRReplica(Configuration config, int myIdx,
         });
     this->stateTransferTimeout->Start();
     this->resendPrepareTimeout = new Timeout(transport, 500, [this]() {
-            ResendPrepare();
+            if(!isDelegated){
+                ResendPrepare();
+            }
         });
     this->closeBatchTimeout = new Timeout(transport, 300, [this]() {
             CloseBatch();
@@ -110,8 +113,9 @@ VRReplica::VRReplica(Configuration config, int myIdx,
             SendRecoveryMessages();
         });
 
-    this->heartbeatTimeout = new Timeout(transport, 2500, [this]() {
-            SendHeartbeat();
+    this->heartbeatTimeout = new Timeout(transport, 1500, [this]() {
+            // Warning("heartbeat timeout triggered");
+            OnHeartbeatTimer();
         });
 
     _Latency_Init(&requestLatency, "request");
@@ -120,6 +124,12 @@ VRReplica::VRReplica(Configuration config, int myIdx,
     if (initialize) {
         if (AmLeader()) {
             nullCommitTimeout->Start();
+            heartbeatTimeout->Start();
+
+            for (uint32_t i = 0; i < configuration.n; ++i) {
+            heartbeatCheck[i] = 0;
+            RWarning("added the %d replica", i);
+            }
         } else {
             viewChangeTimeout->Start();
         }        
@@ -142,6 +152,7 @@ VRReplica::~VRReplica()
     delete resendPrepareTimeout;
     delete closeBatchTimeout;
     delete recoveryTimeout;
+    delete heartbeatTimeout;
     
     for (auto &kv : pendingPrepares) {
         delete kv.first;
@@ -166,6 +177,7 @@ VRReplica::AmLeader() const
 void
 VRReplica::CommitUpTo(opnum_t upto)
 {
+
     while (lastCommitted < upto) {
         Latency_Start(&executeAndReplyLatency);
         
@@ -195,7 +207,7 @@ VRReplica::CommitUpTo(opnum_t upto)
         if (cte.lastReqId <= entry->request.clientreqid()) {
             cte.lastReqId = entry->request.clientreqid();
             cte.replied = true;
-            cte.reply = reply;            
+            cte.reply = reply;
         } else {
             // We've subsequently prepared another operation from the
             // same client. So this request must have been completed
@@ -220,16 +232,15 @@ VRReplica::CommitUpTo(opnum_t upto)
 void
 VRReplica::ExecuteLog()
 {
-    while (true) {
+    while (lastCommitted <= log.LastOpnum()) {
         Latency_Start(&executeAndReplyLatency);
-        
-        lastCommitted++;
-
+    
         /* Find operation in log */
         const LogEntry *entry = log.Find(lastCommitted);
         if (!entry) {
             RPanic("Did not find operation " FMT_OPNUM " in log", lastCommitted);
         }
+        lastCommitted++;
         
         /* want to loop through only the committed ops - mocking execute() func from java code*/
         bool wasChanged = log.SetStatus(lastCommitted, LOG_STATE_COMMITTED);
@@ -261,8 +272,9 @@ VRReplica::ExecuteLog()
             // result.
         }
         
-        if(AmLeader() || !isDelegated){
+        if(AmLeader()){
             /* Send reply */
+            RPanic("actually replying");
             auto iter = clientAddresses.find(entry->request.clientid());
             if (iter != clientAddresses.end()) {
                 transport->SendMessage(this, *iter->second, reply);
@@ -274,45 +286,42 @@ VRReplica::ExecuteLog()
 }
 
 
-int GetReplicaIdx(const TransportAddress &address) {
-    const SimulatedTransportAddress *simAddr = dynamic_cast<const SimulatedTransportAddress*>(&address);
-    
-    if ((typeid(address) == typeid(SimulatedTransportAddress)) && simAddr) {
-        int idx = simAddr->GetAddr();
-        return idx;
-    } else {
-        // address is not SimulatedTransportAddress
-        throw std::runtime_error("Invalid address type");
-    }
-}
 
 
 void
-VRReplica::SendHeartbeat()
+VRReplica::OnHeartbeatTimer()
 {
+    
+    int heartbeatMissThreshold = 5;
     for(auto& pair : heartbeatCheck) {
-        if(pair.second == -1){
+        if(pair.first == myIdx){
+            continue;
+        }
+
+        if(pair.second >= heartbeatMissThreshold){
             //node is dead
             if (specpaxos::IsWitness(pair.first)){
+                Warning("turned off delegation");
                 isDelegated = false;
+            }else{
+                //TODO - idle node --> replica node
             }
-        }else if (pair.second == 0){
-            pair.second = -1;
-            //send them a hb message to make sure they are unresponsive        
+        }else if (pair.second < heartbeatMissThreshold){
+            pair.second++;
+
+            //send them a hb message to make sure they are unresponsive
             Heartbeat m;
             m.set_view(view);
             m.set_slotexecuted(GetLowestReplicaCommit());
             
-            RNotice("Sending heartbeat");
+            // RNotice("Sending heartbeat to %d who has %d misses", pair.first, pair.second);
             if (!transport->SendMessageToReplica(this, pair.first, m)) {
                 RWarning("Failed to send heartbeat message to all replicas");
             }
-        }else {
-            pair.second = 0;
         }
-        
-        
     }
+
+    // RWarning("reset heartbeattimeout in heartbeat");
 
     heartbeatTimeout->Reset();
 }
@@ -384,7 +393,7 @@ VRReplica::RequestStateTransfer()
     this->lastRequestStateTransferView = view;
     this->lastRequestStateTransferOpnum = lastCommitted;
 
-    if (!transport->SendMessageToAll(this, m)) {
+    if (!SendMessageToAllReplicas(m)) {
         RWarning("Failed to send RequestStateTransfer message to all replicas");
     }
 }
@@ -404,12 +413,20 @@ VRReplica::EnterView(view_t newview)
     if (AmLeader()) {
         viewChangeTimeout->Stop();
         nullCommitTimeout->Start();
+        RWarning("heartbeattimeout started");
+        heartbeatTimeout->Start();
+        for (uint32_t i = 0; i < configuration.n; ++i) {
+            heartbeatCheck[i] = 0;
+            RWarning("added the %d replica", i);
+        }
+
     } else {
         viewChangeTimeout->Start();
         nullCommitTimeout->Stop();
         resendPrepareTimeout->Stop();
         closeBatchTimeout->Stop();
     }
+    
 
     prepareOKQuorum.Clear();
     startViewChangeQuorum.Clear();
@@ -435,7 +452,7 @@ VRReplica::StartViewChange(view_t newview)
     m.set_replicaidx(myIdx);
     m.set_lastcommitted(lastCommitted);
 
-    if (!transport->SendMessageToAll(this, m)) {
+    if (!SendMessageToAllReplicas(m)) {
         RWarning("Failed to send StartViewChange message to all replicas");
     }
 }
@@ -449,7 +466,7 @@ VRReplica::SendNullCommit()
 
     ASSERT(AmLeader());
     
-    if (!(transport->SendMessageToAll(this, cm))) {
+    if (!(SendMessageToAllReplicas(cm))) {
         RWarning("Failed to send null COMMIT message to all replicas");
     }
 }
@@ -484,6 +501,9 @@ VRReplica::ResendPrepare()
     }
     if (!(transport->SendMessageToAll(this, lastPrepare))) {
         RWarning("Failed to ressend prepare message to all replicas");
+    }else{
+        // RWarning("reset heartbeattimeout in resendprepare");
+        
     }
 }
 
@@ -518,6 +538,9 @@ VRReplica::CloseBatch()
     if(!isDelegated) {
         if (!(transport->SendMessageToAll(this, p))) {
             RWarning("Failed to send prepare message to all replicas");
+        }else{
+            // RWarning("reset heartbeattimeout in closebatch");
+            
         }
     }
     lastBatchEnd = lastOp;
@@ -561,8 +584,18 @@ VRReplica::ReceiveMessage(const TransportAddress &remote,
     static Heartbeat heartbeat;
     static HeartbeatReply heartbeatReply;
 
-    if(AmLeader()){
-        heartbeatCheck[GetReplicaIdx(remote)] = 1;
+
+
+    const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
+    int srcAddr = simRemote.GetAddr();
+
+    // RWarning("Received %s message in VR Replica from %d", type.c_str(), srcAddr);
+
+    //made the assumption that messages received from servers with a replica index < configuration.n are replicas/witnesses
+    // if this assumption is false, we must find some way to determine if a sender is a replica or a client
+    if(AmLeader() && (srcAddr<configuration.n)){
+        heartbeatCheck[srcAddr] = 0;
+        // RWarning("created heartbeatcheck entry for %d", srcAddr);
     }
 
 
@@ -603,15 +636,12 @@ VRReplica::ReceiveMessage(const TransportAddress &remote,
         recoveryResponse.ParseFromString(data);
         HandleRecoveryResponse(remote, recoveryResponse);
     } else if (type == witnessDecision.GetTypeName()) {
-        RWarning("Got WitnessDecision");
         witnessDecision.ParseFromString(data);
         HandleWitnessDecision(remote, witnessDecision);
     } else if (type == heartbeat.GetTypeName()) {
-        RWarning("Got Heartbeat");
         heartbeat.ParseFromString(data);
         HandleHeartbeat(remote, heartbeat);
     } else if (type == heartbeatReply.GetTypeName()) {
-        RWarning("Got HeartbeatReply");
         heartbeatReply.ParseFromString(data);
         HandleHeartbeatReply(remote, heartbeatReply);
     } else {
@@ -638,10 +668,12 @@ VRReplica::HandleRequest(const TransportAddress &remote,
         RDebug("Non-leader replica has request");
         
         PaxosAck paxosAck;
+        paxosAck.set_clientreqid(msg.req().clientreqid());
         paxosAck.set_replicaidx(myIdx);
-        Request *r = paxosAck.add_request();
-        *r = msg.req();
-
+        // Request *r = paxosAck.add_req();
+        // *r = msg.req();
+        *paxosAck.mutable_req() = msg.req();
+        paxosAck.set_n(configuration.n);
         if (!(transport->SendMessage(this, remote, paxosAck)))
             Warning("Failed to send paxosAck message");
 
@@ -671,7 +703,7 @@ VRReplica::HandleRequest(const TransportAddress &remote,
             // waiting for the other replicas; in that case, just
             // discard the request.
             if (entry.replied) {
-                RNotice("Received duplicate request; resending reply");
+                // RNotice("Received duplicate request; resending reply");
                 if (!(transport->SendMessage(this, remote,
                                              entry.reply))) {
                     RWarning("Failed to resend reply to client");
@@ -679,7 +711,7 @@ VRReplica::HandleRequest(const TransportAddress &remote,
                 Latency_EndType(&requestLatency, 'r');
                 return;
             } else {
-                RNotice("Received duplicate request but no reply available; ignoring");
+                // RNotice("Received duplicate request but no reply available; ignoring");
                 Latency_EndType(&requestLatency, 'd');
                 return;
             }
@@ -711,28 +743,31 @@ VRReplica::HandleRequest(const TransportAddress &remote,
         transport->SendMessage(this, remote, reply);
         Latency_EndType(&requestLatency, 'f');
     } else {
-        Request request;
-        request.set_op(res);
-        request.set_clientid(msg.req().clientid());
-        request.set_clientreqid(msg.req().clientreqid());
-    
-        /* Assign it an opnum */
-        ++this->lastOp;
-        v.view = this->view;
-        v.opnum = this->lastOp;
+        //request will be added to log upon receival of witnessDecision when delegated
+        if(!isDelegated){
+            Request request;
+            request.set_op(res);
+            request.set_clientid(msg.req().clientid());
+            request.set_clientreqid(msg.req().clientreqid());
+        
+            /* Assign it an opnum */
+            ++this->lastOp;
+            v.view = this->view;
+            v.opnum = this->lastOp;
 
-        RDebug("Received REQUEST, assigning " FMT_VIEWSTAMP, VA_VIEWSTAMP(v));
+            RDebug("Received REQUEST, assigning " FMT_VIEWSTAMP, VA_VIEWSTAMP(v));
 
-        /* Add the request to my log */
-        log.Append(v, request, LOG_STATE_PREPARED);
+            /* Add the request to my log */
+            log.Append(v, request, LOG_STATE_PREPARED);
 
-        if (batchComplete ||
-            (lastOp - lastBatchEnd+1 > (unsigned int)batchSize)) {
-            CloseBatch();
-        } else {
-            RDebug("Keeping in batch");
-            if (!closeBatchTimeout->Active()) {
-                closeBatchTimeout->Start();
+            if (batchComplete ||
+                (lastOp - lastBatchEnd+1 > (unsigned int)batchSize)) {
+                CloseBatch();
+            } else {
+                RDebug("Keeping in batch");
+                if (!closeBatchTimeout->Active()) {
+                    closeBatchTimeout->Start();
+                }
             }
         }
 
@@ -850,6 +885,7 @@ VRReplica::HandlePrepare(const TransportAddress &remote,
         if (op <= lastOp) {
             continue;
         }
+    
         this->lastOp++;
         log.Append(viewstamp_t(msg.view(), op),
                    req, LOG_STATE_PREPARED);
@@ -909,7 +945,7 @@ VRReplica::HandlePrepareOK(const TransportAddress &remote,
 	}
     
     viewstamp_t vs = { msg.view(), msg.opnum() };
-    if (auto msgs = prepareOKQuorum.AddAndCheckForQuorum(vs, msg.replicaidx(), msg, false)) {
+    if (auto msgs = prepareOKQuorum.AddAndCheckForQuorum(vs, msg.replicaidx(), msg, isDelegated)) {
         /*
          * We have a quorum of PrepareOK messages for this
          * opnumber. Execute it and all previous operations.
@@ -936,7 +972,7 @@ VRReplica::HandlePrepareOK(const TransportAddress &remote,
         cm.set_view(this->view);
         cm.set_opnum(this->lastCommitted);
 
-        if (!(transport->SendMessageToAll(this, cm))) {
+        if (!(SendMessageToAllReplicas(cm))) {
             RWarning("Failed to send COMMIT message to all replicas");
         }
 
@@ -978,7 +1014,7 @@ VRReplica::HandleCommit(const TransportAddress &remote,
     }
 
     viewChangeTimeout->Reset();
-    
+
     if (msg.opnum() <= this->lastCommitted) {
         RDebug("Ignoring COMMIT; already committed that operation");
         return;
@@ -1077,6 +1113,7 @@ VRReplica::HandleStateTransfer(const TransportAddress &remote,
             
             lastOp++;
             viewstamp_t vs = { newEntry.view(), newEntry.opnum() };
+
             log.Append(vs, newEntry.request(), LOG_STATE_PREPARED);
         }
         //TODO figure out why we need this - from vrw
@@ -1204,8 +1241,8 @@ VRReplica::HandleDoViewChange(const TransportAddress &remote,
         DoViewChangeMessage latestMsgObj;
         DoViewChangeMessage *latestMsg = NULL;
 
-        for (auto kv : *msgs) {
-            DoViewChangeMessage &x = kv.second;
+        for (const auto &kv : *msgs) {
+            const DoViewChangeMessage &x = kv.second;
 			highestCommitted = std::max(x.lastcommitted(), highestCommitted); 
             if ((x.lastnormalview() > latestView) ||
                 (((x.lastnormalview() == latestView) &&
@@ -1426,37 +1463,44 @@ void
 VRReplica::HandleWitnessDecision(const TransportAddress &remote,
                                   const WitnessDecision &msg)
 {
-    Assert(specpaxos::IsWitness(msg.replicaidx()));
-    RDebug("Received WitnessDecision from witness %d",
-           msg.replicaidx());
+    // Warning("[%d] RECEIVED WITNESSDECISION   -   client: %d; reply: %s; slot: %d", myIdx, msg.req().clientreqid(), msg.reqstr().c_str(), msg.opnum());
 
+
+    Assert(specpaxos::IsWitness(msg.replicaidx()));
 
     if (msg.view() > view) {
         RequestStateTransfer();
         return;
     }
-    viewstamp_t v;
-    ++this->lastOp;
-    v.view = this->view;
-    v.opnum = msg.opnum();
-    Assert(this->lastOp == v.opnum);
-
-
-    /* Add operations to the log */
-    opnum_t op = lastOp--;
-    for (auto &req : msg.request()) {
-        op++;
-        if (op <= lastOp) {
-            continue;
-        }
-        this->lastOp++;
-        log.Append(v, req, LOG_STATE_PREPARED);
-        UpdateClientTable(req);
+    
+    if(msg.opnum() > log.LastOpnum()+1){
+        // Warning("future request received - ignoring for now");
+        return;
     }
 
 
+
+    // Warning("putting request: %s with clientid: %d; clientreqid: %d; op: %d   at slot: %d", msg.reqstr().c_str(), msg.req().clientid(), msg.req().clientreqid(), msg.req().op(), msg.opnum());
+    if(msg.opnum() == log.LastOpnum()+1){
+        viewstamp_t v;
+        this->lastOp++;
+        v.view = this->view;
+        v.opnum = msg.opnum();
+
+        log.Append(v, msg.req(), LOG_STATE_COMMITTED);
+        
+        UpdateClientTable(msg.req());
+    }else{
+        viewstamp_t v;
+        v.view = this->view;
+        v.opnum = msg.opnum();
+
+        //priority put - dont need to update table
+        log.PriorityPut(v, msg.req(), LOG_STATE_COMMITTED);
+    }
+    
     if(AmLeader()){
-        ExecuteLog();
+        CommitUpTo(this->lastOp);
     }else{
         //should also be the same as elseif case in handledecision
         CommitUpTo(this->lastOp);
@@ -1468,13 +1512,22 @@ void
 VRReplica::HandleHeartbeat(const TransportAddress &remote,
                                   const Heartbeat &msg)
 {
+
+    if (status != STATUS_NORMAL) {
+        RNotice("Ignoring heartbeat due to abnormal status");
+        Latency_EndType(&requestLatency, 'i');
+        return;
+    }
+
     Assert(!AmLeader());
+
+    viewChangeTimeout->Reset();
 
     RDebug("Received Heartbeat from leader %d",
            msg.slotexecuted());
 
     //TODO maybe add log updates? need to decide whether to keep state transfers or not
-    ExecuteLog();
+    CommitUpTo(this->lastOp);
 
     HeartbeatReply reply;
     reply.set_view(view);
@@ -1482,6 +1535,8 @@ VRReplica::HandleHeartbeat(const TransportAddress &remote,
 
     RDebug("Sending HBReply " FMT_VIEWSTAMP,
             reply.view(), reply.slotout());
+
+    // Warning("%d sending heartbeatreply to %d", myIdx, configuration.GetLeaderIndex(view));
 
     if (!(transport->SendMessageToReplica(this,
                                             configuration.GetLeaderIndex(view),
@@ -1499,21 +1554,23 @@ VRReplica::HandleHeartbeatReply(const TransportAddress &remote,
 {
     Assert(AmLeader());
 
-    RDebug("Received Heartbeat from replica %d",
-           msg.slotout());
+    const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
+    int srcAddr = simRemote.GetAddr();
+    
+    heartbeatCheck[srcAddr] = 0;
+    // Warning("got heartbeat reply from %d", srcAddr);
+    // RWarning("created heartbeatcheck entry for %d", srcAddr);
 
+
+
+    if(IsReplica(myIdx)){
+        //TODO - implement idle node updates here as well
+        // note that while the java implementatin performs GC atp, I have opted 
+        //  to use Theano's vrw implementation of GC (since the C++ code was 
+        //  already tested)
+    }
 
 }
-
-
-
-
-// void
-// VRReplica::GarbageCollect(int slotExecuted)
-// {
-// 	RNotice("Cleaning up to " FMT_OPNUM, slotExecuted);
-// 	log.RemoveUpTo(slotExecuted);
-// }
 
 
 opnum_t VRReplica::GetLowestReplicaCommit()
@@ -1534,6 +1591,29 @@ VRReplica::CleanLog()
 	 */
 	RNotice("Cleaning up to " FMT_OPNUM, cleanUpTo);
 	log.RemoveUpTo(cleanUpTo);
+}
+
+
+bool VRReplica::SendMessageToAllReplicas(const ::google::protobuf::Message &msg) {
+    //replicas are odd numbered (but zero-index so start at 0)
+    for(int i=0; i<configuration.n; i+=2){
+        if(IsWitness(i)){
+            RPanic(" designed as witness ");
+        }
+        if(i==myIdx){
+            continue;
+        }
+        if (!(transport->SendMessageToReplica(this,
+                                            i,
+                                            msg))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+size_t VRReplica::GetLogSize(){
+    return log.Size();
 }
 
 

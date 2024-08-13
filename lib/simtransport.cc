@@ -192,6 +192,7 @@ SimulatedTransport::Run()
         // ...then retry to see if there are more queued messages to
         // deliver first
     } while (!queue.empty() || (processTimers && !timers.empty()));
+    Warning("finished run");
 }
 
 void

@@ -1,0 +1,126 @@
+// -*- mode: c++; c-file-style: "k&r"; c-basic-offset: 4 -*-
+/***********************************************************************
+ *
+ * vr/replica.h:
+ *   Viewstamped Replication protocol
+ *
+ * Copyright 2013-2016 Dan R. K. Ports  <drkp@cs.washington.edu>
+ *
+ * Permission is hereby granted, free of charge, to any person
+ * obtaining a copy of this software and associated documentation
+ * files (the "Software"), to deal in the Software without
+ * restriction, including without limitation the rights to use, copy,
+ * modify, merge, publish, distribute, sublicense, and/or sell copies
+ * of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ *
+ **********************************************************************/
+
+#ifndef _VR_WITNESS_H_
+#define _VR_WITNESS_H_
+
+#include "lib/configuration.h"
+#include "lib/latency.h"
+#include "lib/transport.h"
+#include "common/log.h"
+#include "common/replica.h"
+#include "common/quorumset.h"
+#include "vr/vr-proto.pb.h"
+
+#include <map>
+#include <memory>
+#include <list>
+
+namespace specpaxos {
+namespace vr {
+
+class VRWitness : public Replica
+{
+public:
+    VRWitness(Configuration config, int myIdx, bool initialize,
+              Transport *transport, int batchSize,
+              AppReplica *app);
+    ~VRWitness();
+    
+    void ReceiveMessage(const TransportAddress &remote,
+                        const string &type, const string &data);
+
+    size_t GetLogSize();
+
+private:
+    view_t view;
+    opnum_t lastCommitted;
+    opnum_t lastOp;
+    view_t lastRequestStateTransferView;
+    opnum_t lastRequestStateTransferOpnum;
+    uint64_t recoveryNonce;
+    std::list<std::pair<TransportAddress *,
+                        proto::PrepareMessage> > pendingPrepares;
+    proto::PrepareMessage lastPrepare;
+    int batchSize;
+    bool isDelegated;
+
+    opnum_t cleanUpTo;
+    std::vector<opnum_t> lastCommitteds;
+    
+    Log log;
+    std::map<uint64_t, std::unique_ptr<TransportAddress> > clientAddresses;
+    struct ClientTableEntry
+    {
+        uint64_t lastReqId;
+        bool replied;
+        proto::ReplyMessage reply;
+    };
+
+    QuorumSet<view_t, proto::StartViewChangeMessage> startViewChangeQuorum;
+    QuorumSet<view_t, proto::DoViewChangeMessage> doViewChangeQuorum;
+
+    Timeout *viewChangeTimeout;
+    Timeout *nullCommitTimeout;
+    Timeout *stateTransferTimeout;
+    Timeout *resendPrepareTimeout;
+    Timeout *closeBatchTimeout;
+    Timeout *recoveryTimeout;
+
+    Latency_t requestLatency;
+    Latency_t executeAndReplyLatency;
+
+    uint64_t GenerateNonce() const;
+    bool AmLeader() const;
+    void CommitUpTo(opnum_t upto);
+    void EnterView(view_t newview);
+    void StartViewChange(view_t newview);
+    void CleanLog();
+    opnum_t GetLowestReplicaCommit();
+    void HandleRequest(const TransportAddress &remote,
+                       const proto::RequestMessage &msg);
+    void HandleStartViewChange(const TransportAddress &remote,
+                               const proto::StartViewChangeMessage &msg);
+    void HandleStartView(const TransportAddress &remote,
+                         const proto::StartViewMessage &msg);
+    void HandleDoViewChange(const TransportAddress &remote,
+                            const proto::DoViewChangeMessage &msg);
+    void HandleChainMessage(const TransportAddress &remote,
+                         const proto::ChainMessage &msg);
+    void HandleHeartbeat(const TransportAddress &remote,
+                         const proto::Heartbeat &msg);
+    bool SendMessageToAllReplicas(const ::google::protobuf::Message &m);
+    
+};
+
+} // namespace specpaxos::vr
+} // namespace specpaxos
+
+#endif  /* _VR_WITNESS_H_ */

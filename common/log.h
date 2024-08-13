@@ -90,10 +90,13 @@ public:
 
     Log(bool useHash, opnum_t start = 1, string initialHash = EMPTY_HASH);
     LogEntry & Append(viewstamp_t vs, const Request &req, LogEntryState state);
+    LogEntry & PriorityPut(viewstamp_t vs, const Request &req, LogEntryState state);
     LogEntry * Find(opnum_t opnum);
     bool SetStatus(opnum_t opnum, LogEntryState state);
     bool SetRequest(opnum_t op, const Request &req);
     void RemoveAfter(opnum_t opnum);
+    void RemoveUpTo(opnum_t opnum);
+    int Contains(const Request &req);
     LogEntry * Last();
     viewstamp_t LastViewstamp() const; // deprecated
     opnum_t LastOpnum() const;
@@ -105,12 +108,13 @@ public:
 
     static string ComputeHash(string lastHash, const LogEntry &entry);
     static const string EMPTY_HASH;
-
+    opnum_t start;
+    size_t Size();
     
 private:
     std::vector<LogEntry> entries;
     string initialHash;
-    opnum_t start;
+    
     bool useHash;
 };
 

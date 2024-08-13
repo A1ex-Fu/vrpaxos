@@ -43,6 +43,7 @@ Log::Log(bool useHash, opnum_t start, string initialHash)
 {
     this->initialHash = initialHash;
     this->start = start;
+    // Panic("start is %d", start);
     if (start == 1) {
         ASSERT(initialHash == EMPTY_HASH);
     }
@@ -67,6 +68,37 @@ Log::Append(viewstamp_t vs, const Request &req, LogEntryState state)
     return entries.back();
 }
 
+
+LogEntry & Log::PriorityPut(viewstamp_t vs, const Request &req, LogEntryState state)
+{
+    if (entries.empty()) {
+        Warning("vs.opnum: %d; start:%d", vs.opnum, start);
+        ASSERT(vs.opnum == start);
+    } 
+    
+    if (vs.opnum == LastOpnum()+1) {
+        return Append(vs, req, state);
+    } else if (vs.opnum > LastOpnum()+1) {
+        Panic("priority put - index %d is not valid - next should've been %d", vs.opnum, LastOpnum()+1);
+    }
+
+    LogEntry entry = LogEntry(vs, state, req);
+    size_t index = vs.opnum - start;
+
+    if (index < entries.size()) {
+        // replace existing element
+        entries[index] = entry;
+    } else {
+        // shoudlnt hit this case?
+        Panic("inserted in incorrect spot of index %d, opnum %d, entries size of %d, and lastopnum of %d", index, vs.opnum, entries.size(), LastOpnum());
+    }
+
+    return entry;
+    //dont really think we need to return anything
+}
+
+
+
 // This really ought to be const
 LogEntry *
 Log::Find(opnum_t opnum)
@@ -84,6 +116,7 @@ Log::Find(opnum_t opnum)
     }
 
     LogEntry *entry = &entries[opnum-start];
+
     ASSERT(entry->viewstamp.opnum == opnum);
     return entry;
 }
@@ -93,7 +126,11 @@ bool
 Log::SetStatus(opnum_t op, LogEntryState state)
 {
     LogEntry *entry = Find(op);
+    //made edits so that setstatus also returns false if the state changed
     if (entry == NULL) {
+        return false;
+    } else if ((entry->state != state)){
+        entry->state = state;
         return false;
     }
 
@@ -138,6 +175,52 @@ Log::RemoveAfter(opnum_t op)
 
     ASSERT(LastOpnum() == op-1);
 }
+
+
+void
+Log::RemoveUpTo(opnum_t op)
+{
+    if (useHash) {
+        Panic("Log::RemoveUpTo on hashed log not supported.");
+    }
+
+	ASSERT(op >= start);
+
+    Notice("Removing log entries up to " FMT_OPNUM "; start is " FMT_OPNUM, op, start);
+	ASSERT(entries.begin()->viewstamp.opnum == start);
+	while (start <= op) {
+		// Shouldn't erase uncommitted entries---everyone should have committed
+		// these already!
+		ASSERT(entries.begin()->state == LOG_STATE_COMMITTED);
+		entries.erase(entries.begin());	
+		start++;
+		ASSERT(entries.empty() || entries.begin()->viewstamp.opnum == start);
+	}
+
+	ASSERT(entries.empty() || entries.begin()->viewstamp.opnum == op + 1);
+	Notice("New log size: " FMT_OPNUM, entries.size());
+}
+
+
+/**
+ * @brief Checks whether a request is contained and returns the opnum, if applicable (only compares request, not entire entry)
+ * 
+ * @param req - client request
+ * @returns -1 if the req is not in the log and the opnum of the request otherwise
+ */
+int Log::Contains(const Request &req){
+    for (auto &entry : entries) {
+        if (req.clientid() == entry.request.clientid() &&
+                    req.clientreqid() == entry.request.clientreqid() &&
+                    req.op() == entry.request.op()) {
+            return entry.viewstamp.opnum;
+        }
+    }
+    // Warning("no match for request with clientid: %d; clientreqid: %d; op: %d", req.clientid(), req.clientreqid(), req.op());
+    return -1;
+}
+
+
 
 LogEntry *
 Log::Last()
@@ -213,6 +296,10 @@ Log::ComputeHash(string lastHash, const LogEntry &entry)
     SHA1_Final(out, &ctx);
 
     return string((char *)out, SHA_DIGEST_LENGTH);
+}
+
+size_t Log::Size(){
+    return entries.size();
 }
 
 } // namespace specpaxos

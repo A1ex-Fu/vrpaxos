@@ -92,6 +92,9 @@ protected:
     AppReplica *app;
     ReplicaStatus status;
 };
+
+bool IsWitness(int idx);
+bool IsReplica(int idx);
     
 #include "replica-inl.h"
 

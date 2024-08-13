@@ -4,6 +4,7 @@ package specpaxos.vr.proto;
 
 message RequestMessage {
     required specpaxos.Request req = 1;
+    optional string reqStr = 2;
 }
 
 message ReplyMessage {
@@ -121,13 +122,16 @@ message WitnessDecision {
     required uint64 view = 1;
     required uint64 opnum = 2;
     required uint32 replicaIdx = 3;
-    repeated specpaxos.Request request = 4;
+    required specpaxos.Request req = 4;
+    optional string reqStr = 5;
 }
 
 
 message PaxosAck {
-    required uint32 replicaIdx = 1;
-    repeated specpaxos.Request request = 2;
+    required uint64 clientreqid = 1;
+    required uint32 replicaIdx = 2;
+    required specpaxos.Request req = 3;
+    required uint64 n = 4;
 }
 
 
@@ -135,7 +139,7 @@ message ChainMessage {
     required uint64 view = 1;
     required uint64 opnum = 2;
     required uint32 replicaIdx = 3;
-    repeated specpaxos.Request request = 4;
+    required specpaxos.Request req = 4;
 }
 
 

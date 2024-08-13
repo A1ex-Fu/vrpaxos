@@ -1,7 +1,7 @@
 d := $(dir $(lastword $(MAKEFILE_LIST)))
 
 SRCS += $(addprefix $(d), \
-	replica.cc client.cc)
+	replica.cc client.cc witness.cc)
 
 PROTOS += $(addprefix $(d), \
 	    vr-proto.proto)
@@ -12,6 +12,10 @@ OBJS-vr-client := $(o)client.o $(o)vr-proto.o \
 
 OBJS-vr-replica := $(o)replica.o $(o)vr-proto.o \
                    $(OBJS-replica) $(LIB-message) \
+                   $(LIB-configuration) $(LIB-latency)
+
+OBJS-vr-witness := $(o)witness.o $(o)vr-proto.o \
+                   $(OBJS-witness) $(LIB-message) \
                    $(LIB-configuration) $(LIB-latency)
 
 include $(d)tests/Rules.mk

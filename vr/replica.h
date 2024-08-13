@@ -57,6 +57,8 @@ public:
     void ReceiveMessage(const TransportAddress &remote,
                         const string &type, const string &data);
 
+    size_t GetLogSize();
+
 private:
     view_t view;
     opnum_t lastCommitted;
@@ -119,7 +121,7 @@ private:
     void CloseBatch();
     opnum_t GetLowestReplicaCommit();
     void CleanLog();
-    void SendHeartbeat();
+    void OnHeartbeatTimer();
     
     void HandleRequest(const TransportAddress &remote,
                        const proto::RequestMessage &msg);
@@ -152,6 +154,7 @@ private:
                         const proto::Heartbeat &msg);
     void HandleHeartbeatReply(const TransportAddress &remote,
                         const proto::HeartbeatReply &msg);
+    bool SendMessageToAllReplicas(const ::google::protobuf::Message &m);
 };
 
 } // namespace specpaxos::vr

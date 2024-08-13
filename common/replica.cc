@@ -37,6 +37,21 @@
 #include <stdlib.h>
 
 namespace specpaxos {
+
+
+// odd nodes are replicas
+bool IsReplica(int idx)
+{
+	return !IsWitness(idx); 
+}
+// even nodes are witnesses
+bool IsWitness(int idx)
+{
+    //mod eq 1 to account for 0-index
+	return (idx % 2 == 1); 
+}
+
+
     
 Replica::Replica(const Configuration &configuration, int myIdx,
                  bool initialize,
