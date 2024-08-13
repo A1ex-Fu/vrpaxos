@@ -99,10 +99,6 @@ VRWitness::~VRWitness()
     Latency_Dump(&executeAndReplyLatency);
 
     delete viewChangeTimeout;
-    
-    for (auto &kv : pendingPrepares) {
-        delete kv.first;
-    }
 }
 
 uint64_t
@@ -169,8 +165,10 @@ VRWitness::ReceiveMessage(const TransportAddress &remote,
     // RWarning("Received %s message in VR Witness from %d", type.c_str(), srcAddr);
     
     if (type == request.GetTypeName()) {
+        Latency_Start(&requestLatency);
         request.ParseFromString(data);
         HandleRequest(remote, request);
+        Latency_EndType(&requestLatency, 'i');
     } else if (type == startViewChange.GetTypeName()) {
         startViewChange.ParseFromString(data);
         HandleStartViewChange(remote, startViewChange);
@@ -220,14 +218,11 @@ VRWitness::HandleRequest(const TransportAddress &remote,
 
     if (status != STATUS_NORMAL) {
         RNotice("Ignoring request due to abnormal status %s", status);
-        Latency_EndType(&requestLatency, 'i');
         return;
     }
     
     if(isDelegated && (status != STATUS_VIEW_CHANGE)) {
         viewstamp_t v;
-        Latency_Start(&requestLatency);
-
 
         //ony first witness replies to requests
         if(myIdx == 1) {
@@ -288,14 +283,12 @@ VRWitness::HandleRequest(const TransportAddress &remote,
                 }
             }
 
-            //TODO check if i should do the latency thing here
-            Latency_End(&requestLatency);
         }
     }
 
 }
 
-//TODO make changes if necessary idk
+
 void
 VRWitness::HandleStartViewChange(const TransportAddress &remote,
                                  const StartViewChangeMessage &msg)

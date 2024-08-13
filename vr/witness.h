@@ -63,12 +63,7 @@ private:
     view_t view;
     opnum_t lastCommitted;
     opnum_t lastOp;
-    view_t lastRequestStateTransferView;
-    opnum_t lastRequestStateTransferOpnum;
-    uint64_t recoveryNonce;
-    std::list<std::pair<TransportAddress *,
-                        proto::PrepareMessage> > pendingPrepares;
-    proto::PrepareMessage lastPrepare;
+
     int batchSize;
     bool isDelegated;
 
@@ -76,22 +71,11 @@ private:
     std::vector<opnum_t> lastCommitteds;
     
     Log log;
-    std::map<uint64_t, std::unique_ptr<TransportAddress> > clientAddresses;
-    struct ClientTableEntry
-    {
-        uint64_t lastReqId;
-        bool replied;
-        proto::ReplyMessage reply;
-    };
 
     QuorumSet<view_t, proto::StartViewChangeMessage> startViewChangeQuorum;
     QuorumSet<view_t, proto::DoViewChangeMessage> doViewChangeQuorum;
 
     Timeout *viewChangeTimeout;
-    Timeout *nullCommitTimeout;
-    Timeout *stateTransferTimeout;
-    Timeout *resendPrepareTimeout;
-    Timeout *closeBatchTimeout;
     Timeout *recoveryTimeout;
 
     Latency_t requestLatency;
