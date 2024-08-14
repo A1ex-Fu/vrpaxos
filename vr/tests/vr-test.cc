@@ -97,7 +97,7 @@ protected:
         for (int i = 0; i < config->n; i++) {
             apps.push_back(new VRTestApp());
             if(IsWitness(i)){
-                replicas.push_back(new VRWitness(*config, i, true, transport, GetParam(), apps[i])); 
+                replicas.push_back(new VRWitness(*config, i, true, transport, apps[i])); 
             }else{
                 replicas.push_back(new VRReplica(*config, i, true, transport, GetParam(), apps[i])); 
             }

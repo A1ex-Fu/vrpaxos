@@ -56,10 +56,9 @@ using namespace proto;
     
 VRWitness::VRWitness(Configuration config, int myIdx,
                      bool initialize,
-                     Transport *transport, int batchSize,
+                     Transport *transport,
                      AppReplica *app)
     : Replica(config, myIdx, initialize, transport, app),
-      batchSize(batchSize),
 	  lastCommitteds(config.n, 0),
       log(false),
       startViewChangeQuorum(config.QuorumSize()-1)
@@ -68,13 +67,9 @@ VRWitness::VRWitness(Configuration config, int myIdx,
     this->view = 0;
     this->lastOp = 1;
     this->lastCommitted = 0;
-    this->isDelegated = true;
 
 	this->cleanUpTo = 0;
 
-    if (batchSize > 1) {
-        Warning("Batching enabled; batch size %d", batchSize);
-    }
 
     this->heartbeatCheckTimeout = new Timeout(transport, 5000, [this,myIdx]() {
             // RWarning("Have not heard from leader; witness");
@@ -208,7 +203,7 @@ VRWitness::HandleRequest(const TransportAddress &remote,
         return;
     }
     
-    if(isDelegated && (status != STATUS_VIEW_CHANGE)) {
+    if((status != STATUS_VIEW_CHANGE)) {
         viewstamp_t v;
 
         //ony first witness replies to requests
@@ -391,14 +386,11 @@ VRWitness::HandleChainMessage(const TransportAddress &remote,
         return;
     }
 
-    this->isDelegated = true;
-
-    //TODO: not sure about this view thing
     Assert(msg.view() >= view);
     //check that we go through entire chain
     Assert(msg.replicaidx()+2==myIdx);
  
-    if(isDelegated && (status != STATUS_VIEW_CHANGE)) {
+    if((status != STATUS_VIEW_CHANGE)) {
         viewstamp_t v;
 
         int slotNum = log.Contains(msg.req());

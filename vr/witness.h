@@ -50,8 +50,7 @@ class VRWitness : public Replica
 {
 public:
     VRWitness(Configuration config, int myIdx, bool initialize,
-              Transport *transport, int batchSize,
-              AppReplica *app);
+              Transport *transport, AppReplica *app);
     ~VRWitness();
     
     void ReceiveMessage(const TransportAddress &remote,
@@ -63,9 +62,6 @@ private:
     view_t view;
     opnum_t lastCommitted;
     opnum_t lastOp;
-
-    int batchSize;
-    bool isDelegated;
 
     opnum_t cleanUpTo;
     std::vector<opnum_t> lastCommitteds;
