@@ -73,16 +73,13 @@ private:
     Log log;
 
     QuorumSet<view_t, proto::StartViewChangeMessage> startViewChangeQuorum;
-    QuorumSet<view_t, proto::DoViewChangeMessage> doViewChangeQuorum;
 
-    Timeout *viewChangeTimeout;
+    Timeout *heartbeatCheckTimeout;
     Timeout *recoveryTimeout;
 
     Latency_t requestLatency;
     Latency_t executeAndReplyLatency;
 
-    uint64_t GenerateNonce() const;
-    bool AmLeader() const;
     void CommitUpTo(opnum_t upto);
     void EnterView(view_t newview);
     void StartViewChange(view_t newview);
@@ -94,8 +91,6 @@ private:
                                const proto::StartViewChangeMessage &msg);
     void HandleStartView(const TransportAddress &remote,
                          const proto::StartViewMessage &msg);
-    void HandleDoViewChange(const TransportAddress &remote,
-                            const proto::DoViewChangeMessage &msg);
     void HandleChainMessage(const TransportAddress &remote,
                          const proto::ChainMessage &msg);
     void HandleHeartbeat(const TransportAddress &remote,

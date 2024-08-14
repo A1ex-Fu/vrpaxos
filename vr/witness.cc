@@ -62,10 +62,9 @@ VRWitness::VRWitness(Configuration config, int myIdx,
       batchSize(batchSize),
 	  lastCommitteds(config.n, 0),
       log(false),
-      startViewChangeQuorum(config.QuorumSize()-1),
-      doViewChangeQuorum(config.QuorumSize()-1)
+      startViewChangeQuorum(config.QuorumSize()-1)
 {
-    this->status = STATUS_NORMAL;
+    this->status = STATUS_NORMAL; 
     this->view = 0;
     this->lastOp = 1;
     this->lastCommitted = 0;
@@ -77,18 +76,18 @@ VRWitness::VRWitness(Configuration config, int myIdx,
         Warning("Batching enabled; batch size %d", batchSize);
     }
 
-    this->viewChangeTimeout = new Timeout(transport, 5000, [this,myIdx]() {
+    this->heartbeatCheckTimeout = new Timeout(transport, 5000, [this,myIdx]() {
             // RWarning("Have not heard from leader; witness");
-            // status = STATUS_VIEW_CHANGE;
+            status = STATUS_VIEW_CHANGE;
         });
 
     _Latency_Init(&requestLatency, "request");
     _Latency_Init(&executeAndReplyLatency, "executeAndReply");
 
     if (initialize) {
-		viewChangeTimeout->Start();
+		heartbeatCheckTimeout->Start();
     } else {
-        RWarning("Witness initialized with initialize set to false; witness");
+        // RWarning("Witness initialized with initialize set to false; witness");
     }
 }
 
@@ -98,17 +97,9 @@ VRWitness::~VRWitness()
     Latency_Dump(&requestLatency);
     Latency_Dump(&executeAndReplyLatency);
 
-    delete viewChangeTimeout;
+    delete heartbeatCheckTimeout;
 }
 
-uint64_t
-VRWitness::GenerateNonce() const
-{
-    std::random_device rd;
-    std::mt19937_64 gen(rd());
-    std::uniform_int_distribution<uint64_t> dis;
-    return dis(gen);    
-}
 
 void
 VRWitness::CommitUpTo(opnum_t upto)
@@ -136,14 +127,15 @@ void
 VRWitness::EnterView(view_t newview)
 {
     RNotice("Entering new view " FMT_VIEW, newview);
+    RPanic("witness enter new view");
 
     view = newview;
+    Warning("witness %d has status normal", myIdx);
     status = STATUS_NORMAL;
 
-	viewChangeTimeout->Start();
+	heartbeatCheckTimeout->Start();
 
     startViewChangeQuorum.Clear();
-    doViewChangeQuorum.Clear();
 
 }
 
@@ -155,7 +147,6 @@ VRWitness::ReceiveMessage(const TransportAddress &remote,
     static RequestMessage request;
     static StartViewChangeMessage startViewChange;
     static StartViewMessage startView;
-    static DoViewChangeMessage doViewChange;
     static Heartbeat heartbeat;
     static ChainMessage chainMessage;
 
@@ -175,9 +166,6 @@ VRWitness::ReceiveMessage(const TransportAddress &remote,
     } else if (type == startView.GetTypeName()) {
         startView.ParseFromString(data);
         HandleStartView(remote, startView);
-    } else if (type == doViewChange.GetTypeName()) {
-        doViewChange.ParseFromString(data);
-        HandleDoViewChange(remote, doViewChange);
     } else if (type == heartbeat.GetTypeName()) {
         heartbeat.ParseFromString(data);
         HandleHeartbeat(remote, heartbeat);
@@ -199,7 +187,7 @@ VRWitness::StartViewChange(view_t newview)
     view = newview;
     status = STATUS_VIEW_CHANGE;
 
-    viewChangeTimeout->Reset();
+    heartbeatCheckTimeout->Reset();
 
 
     StartViewChangeMessage m;
@@ -214,10 +202,9 @@ VRWitness::StartViewChange(view_t newview)
 void
 VRWitness::HandleRequest(const TransportAddress &remote,
                          const RequestMessage &msg)
-{        
-
+{
     if (status != STATUS_NORMAL) {
-        RNotice("Ignoring request due to abnormal status %s", status);
+        RNotice("Ignoring request due to abnormal status");
         return;
     }
     
@@ -262,7 +249,6 @@ VRWitness::HandleRequest(const TransportAddress &remote,
                 *reply.mutable_req() = msg.req();
                 reply.set_reqstr(msg.reqstr());
 
-                // RWarning("sending WitnessDecision with slot %d for request %s", slotNum, msg.reqstr().c_str());
                 if(!SendMessageToAllReplicas(reply)){
                     RWarning("Failed to send prepare message to all replicas - from witness HandleRequest");
                 }else{
@@ -381,7 +367,7 @@ VRWitness::HandleStartView(const TransportAddress &remote,
                     msg.entries().end());
     }
 
-
+    RPanic("got startviewmessage");
     EnterView(msg.view());
     opnum_t oldLastOp = lastOp;
     lastOp = msg.lastop();
@@ -391,134 +377,6 @@ VRWitness::HandleStartView(const TransportAddress &remote,
 
     //presumably, witnesses will be up to date but not sure yet whether sending prepareOKs is
     // SendPrepareOKs(oldLastOp);
-}
-
-void
-VRWitness::HandleDoViewChange(const TransportAddress &remote,
-                              const DoViewChangeMessage &msg)
-{
-    RDebug("Received DOVIEWCHANGE " FMT_VIEW " from replica %d, "
-           "lastnormalview=" FMT_VIEW " op=" FMT_OPNUM " committed=" FMT_OPNUM,
-           msg.view(), msg.replicaidx(),
-           msg.lastnormalview(), msg.lastop(), msg.lastcommitted());
-
-    if (msg.view() < view) {
-        RDebug("Ignoring DOVIEWCHANGE for older view");
-        return;
-    }
-
-    if ((msg.view() == view) && (status != STATUS_VIEW_CHANGE)) {
-        RDebug("Ignoring DOVIEWCHANGE for current view");
-        return;
-    }
-
-    if ((status != STATUS_VIEW_CHANGE) || (msg.view() > view)) {
-        // It's superfluous to send the StartViewChange messages here,
-        // but harmless...
-        RWarning("Received DoViewChange for view " FMT_VIEW
-                 "from replica %d", msg.view(), msg.replicaidx());
-        StartViewChange(msg.view());
-    }
-
-    ASSERT(configuration.GetLeaderIndex(msg.view()) == myIdx);
-    
-    auto msgs = doViewChangeQuorum.AddAndCheckForQuorum(msg.view(),
-                                                        msg.replicaidx(),
-                                                        msg, isDelegated);
-    if (msgs != NULL) {
-        // Find the response with the most up to date log, i.e. the
-        // one with the latest viewstamp
-        view_t latestView = log.LastViewstamp().view;
-        opnum_t latestOp = log.LastViewstamp().opnum;
-		opnum_t highestCommitted = lastCommitted; 
-        DoViewChangeMessage latestMsgObj;
-        DoViewChangeMessage *latestMsg = NULL;
-
-        for (auto kv : *msgs) {
-            DoViewChangeMessage &x = kv.second;
-			highestCommitted = std::max(x.lastcommitted(), highestCommitted); 
-            if ((x.lastnormalview() > latestView) ||
-                (((x.lastnormalview() == latestView) &&
-                  (x.lastop() > latestOp)))) {
-                latestView = x.lastnormalview();
-                latestOp = x.lastop();
-				latestMsgObj = kv.second;
-                latestMsg = &latestMsgObj;
-            }
-        }
-
-        // Install the new log. We might not need to do this, if our
-        // log was the most current one.
-        if (latestMsg != NULL) {
-            RDebug("Selected log from replica %d with lastop=" FMT_OPNUM,
-                   latestMsg->replicaidx(), latestMsg->lastop());
-            if (latestMsg->entries_size() == 0) {
-                // There weren't actually any entries in the
-                // log. That should only happen in the corner case
-                // that everyone already had the entire log, maybe
-                // because it actually is empty.
-                ASSERT(lastCommitted == msg.lastcommitted());
-                ASSERT(msg.lastop() == msg.lastcommitted());
-            } else {
-                if (latestMsg->entries(0).opnum() > lastCommitted+1) {
-                    RPanic("Received log that didn't include enough entries to install it");
-                }
-                
-                log.RemoveAfter(latestMsg->lastop()+1);
-                log.Install(latestMsg->entries().begin(),
-                            latestMsg->entries().end());
-            }
-        } else {
-            RDebug("My log is most current, lastnormalview=" FMT_VIEW " lastop=" FMT_OPNUM,
-                   log.LastViewstamp().view, lastOp);
-        }
-
-        // How much of the log should we include when we send the
-        // STARTVIEW message? Start from the lowest committed opnum of
-        // any of the STARTVIEWCHANGE or DOVIEWCHANGE messages we got.
-        //
-        // We need to compute this before we enter the new view
-        // because the saved messages will go away.
-        auto svcs = startViewChangeQuorum.GetMessages(view);
-        opnum_t minCommittedSVC = std::min_element(
-            svcs.begin(), svcs.end(),
-            [](decltype(*svcs.begin()) a,
-               decltype(*svcs.begin()) b) {
-                return a.second.lastcommitted() < b.second.lastcommitted();
-            })->second.lastcommitted();
-        opnum_t minCommittedDVC = std::min_element(
-            msgs->begin(), msgs->end(),
-            [](decltype(*msgs->begin()) a,
-               decltype(*msgs->begin()) b) {
-                return a.second.lastcommitted() < b.second.lastcommitted();
-            })->second.lastcommitted();
-        opnum_t minCommitted = std::min(minCommittedSVC, minCommittedDVC);
-        minCommitted = std::min(minCommitted, lastCommitted);
-        minCommitted = std::min(minCommitted, GetLowestReplicaCommit());
-
-        lastOp = latestOp;
-
-        EnterView(msg.view());
-
-        
-		CommitUpTo(highestCommitted);
-
-        for (size_t i = 0; i < lastCommitteds.size(); i++) {
-			lastCommitteds[i] = cleanUpTo;
-		}
-
-        // Send a STARTVIEW message with the new log
-        StartViewMessage sv;
-        sv.set_view(view);
-        sv.set_lastop(lastOp);
-        sv.set_lastcommitted(lastCommitted);
-        
-        log.Dump(minCommitted, sv.mutable_entries());
-
-        if (!(transport->SendMessageToAll(this, sv))) {
-            RWarning("Failed to send StartView message to all replicas");
-        }
-    }    
 }
 
 
@@ -604,7 +462,23 @@ VRWitness::HandleHeartbeat(const TransportAddress &remote,
     RDebug("Received Heartbeat from leader %d",
            msg.slotexecuted());
 
-    viewChangeTimeout->Reset();
+
+    // note: there is an issue where the witness is a part of a minority that believed the leader
+    //   was unresponsive. In the java implementation, it would've ignored that fact and continued
+    //   believing the leader was responsive until another replica said otherwise. However, in this 
+    //   system, the witness is allowed to believe the leader is dead. They can start searching for 
+    //   a quorum they might never acheive and then will leave the system undelegated for no good 
+    //   reason. 
+
+    if(msg.view()<view){
+        Warning("got old heartbeat");
+        return;
+    }
+
+    status = STATUS_NORMAL;
+
+
+    heartbeatCheckTimeout->Reset();
     HeartbeatReply reply;
     reply.set_view(view);
     reply.set_slotout(lastCommitted);
@@ -665,3 +539,4 @@ size_t VRWitness::GetLogSize(){
 
 } // namespace specpaxos::vr
 } // namespace specpaxos
+

@@ -66,6 +66,8 @@ VRReplica::VRReplica(Configuration config, int myIdx,
       doViewChangeQuorum(config.QuorumSize()-1),
       recoveryResponseQuorum(config.QuorumSize())
 {
+
+
     this->status = STATUS_NORMAL;
     this->view = 0;
     this->lastOp = 0;
@@ -113,7 +115,7 @@ VRReplica::VRReplica(Configuration config, int myIdx,
             SendRecoveryMessages();
         });
 
-    this->heartbeatTimeout = new Timeout(transport, 1500, [this]() {
+    this->heartbeatTimeout = new Timeout(transport, 1000, [this]() {
             // Warning("heartbeat timeout triggered");
             OnHeartbeatTimer();
         });
@@ -127,8 +129,7 @@ VRReplica::VRReplica(Configuration config, int myIdx,
             heartbeatTimeout->Start();
 
             for (uint32_t i = 0; i < configuration.n; ++i) {
-            heartbeatCheck[i] = 0;
-            RWarning("added the %d replica", i);
+                heartbeatCheck[i] = 0;
             }
         } else {
             viewChangeTimeout->Start();
@@ -292,7 +293,7 @@ void
 VRReplica::OnHeartbeatTimer()
 {
     
-    int heartbeatMissThreshold = 5;
+    int heartbeatMissThreshold = 10;
     for(auto& pair : heartbeatCheck) {
         if(pair.first == myIdx){
             continue;
@@ -320,8 +321,6 @@ VRReplica::OnHeartbeatTimer()
             }
         }
     }
-
-    // RWarning("reset heartbeattimeout in heartbeat");
 
     heartbeatTimeout->Reset();
 }
@@ -413,11 +412,9 @@ VRReplica::EnterView(view_t newview)
     if (AmLeader()) {
         viewChangeTimeout->Stop();
         nullCommitTimeout->Start();
-        RWarning("heartbeattimeout started");
         heartbeatTimeout->Start();
         for (uint32_t i = 0; i < configuration.n; ++i) {
             heartbeatCheck[i] = 0;
-            RWarning("added the %d replica", i);
         }
 
     } else {
@@ -440,6 +437,7 @@ VRReplica::StartViewChange(view_t newview)
     RNotice("Starting view change for view " FMT_VIEW, newview);
 
     view = newview;
+
     status = STATUS_VIEW_CHANGE;
 
     viewChangeTimeout->Reset();
@@ -456,6 +454,10 @@ VRReplica::StartViewChange(view_t newview)
         RWarning("Failed to send StartViewChange message to all replicas");
     }
 }
+
+
+
+
 
 void
 VRReplica::SendNullCommit()
@@ -1326,7 +1328,10 @@ VRReplica::HandleDoViewChange(const TransportAddress &remote,
         
         log.Dump(minCommitted, sv.mutable_entries());
 
+
+
         if (!(transport->SendMessageToAll(this, sv))) {
+            RPanic("failed to send to all");
             RWarning("Failed to send StartView message to all replicas");
         }
     }    
@@ -1465,7 +1470,6 @@ VRReplica::HandleWitnessDecision(const TransportAddress &remote,
 {
     // Warning("[%d] RECEIVED WITNESSDECISION   -   client: %d; reply: %s; slot: %d", myIdx, msg.req().clientreqid(), msg.reqstr().c_str(), msg.opnum());
 
-
     Assert(specpaxos::IsWitness(msg.replicaidx()));
 
     if (msg.view() > view) {
@@ -1562,10 +1566,6 @@ VRReplica::HandleHeartbeatReply(const TransportAddress &remote,
     int srcAddr = simRemote.GetAddr();
     
     heartbeatCheck[srcAddr] = 0;
-    // Warning("got heartbeat reply from %d", srcAddr);
-    // RWarning("created heartbeatcheck entry for %d", srcAddr);
-
-
 
     if(IsReplica(myIdx)){
         //TODO - implement idle node updates here as well

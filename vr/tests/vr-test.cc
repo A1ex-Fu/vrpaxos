@@ -677,7 +677,7 @@ TEST_P(VRTest, Stress)
                              return ((rand() % DROP_PROBABILITY) != 0);
                          });
     
-    // This could take a while; simulate two hours
+    // // This could take a while; simulate two hours
     transport->Timer(7200000, [&]() {
             transport->CancelAllTimers();
         });
