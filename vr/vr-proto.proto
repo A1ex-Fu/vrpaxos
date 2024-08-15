@@ -27,7 +27,6 @@ message PrepareMessage {
     required uint64 opnum = 2;
     required uint64 batchstart = 3;
     repeated Request request = 4;
-    required uint64 cleanUpTo = 5;
 }
 
 message PrepareOKMessage {
@@ -123,7 +122,8 @@ message WitnessDecision {
     required uint64 opnum = 2;
     required uint32 replicaIdx = 3;
     required specpaxos.Request req = 4;
-    optional string reqStr = 5;
+
+    optional string reqStr = 5; 
 }
 
 
@@ -146,6 +146,7 @@ message ChainMessage {
 message Heartbeat {
     required uint64 view = 1;
     required uint64 slotExecuted = 2;
+    required uint64 cleanUpTo = 3;
 }
 
 message HeartbeatReply {

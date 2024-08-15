@@ -469,6 +469,21 @@ VRWitness::HandleHeartbeat(const TransportAddress &remote,
 
     status = STATUS_NORMAL;
 
+    if (msg.cleanupto() > lastCommitted) {
+		RPanic("Asking me to clean an entry after my lastCommitted!");
+	}
+
+	if (msg.cleanupto() > cleanUpTo) {
+		// Clean log up to the lowest committed entry by any replica
+		cleanUpTo = msg.cleanupto();
+		CleanLog(); 
+	} else if (msg.cleanupto() < cleanUpTo) {
+		// A node can see a lower cleanUpTo if the leader fell behind: when it reconstructs
+		// state, it will use its own cleanUpTo as a "safe" value, and will update it 
+		// later once it hears from all the other replicas. 
+		RWarning("cleanUpTo decreased! Got " FMT_OPNUM ", had " FMT_OPNUM, 
+				msg.cleanupto(), cleanUpTo);
+	}
 
     heartbeatCheckTimeout->Reset();
     HeartbeatReply reply;

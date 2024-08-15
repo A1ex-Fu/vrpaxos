@@ -314,6 +314,16 @@ VRReplica::OnHeartbeatTimer()
             Heartbeat m;
             m.set_view(view);
             m.set_slotexecuted(GetLowestReplicaCommit());
+
+            m.set_cleanupto(GetLowestReplicaCommit()); 
+            if (m.cleanupto() > cleanUpTo) {
+                // Clean log up to the lowest committed entry by any replica
+                cleanUpTo = m.cleanupto();
+                CleanLog(); 
+            } else if (m.cleanupto() < cleanUpTo) {
+                RPanic("cleanUpTo decreased! Got " FMT_OPNUM ", had " FMT_OPNUM, 
+                        m.cleanupto(), cleanUpTo);
+            }
             
             // RNotice("Sending heartbeat to %d who has %d misses", pair.first, pair.second);
             if (!transport->SendMessageToReplica(this, pair.first, m)) {
@@ -525,7 +535,7 @@ VRReplica::CloseBatch()
     p.set_view(view);
     p.set_opnum(lastOp);
     p.set_batchstart(batchStart);
-    p.set_cleanupto(GetLowestReplicaCommit()); 
+
 
     for (opnum_t i = batchStart; i <= lastOp; i++) {
         Request *r = p.add_request();
@@ -550,14 +560,6 @@ VRReplica::CloseBatch()
     
     resendPrepareTimeout->Reset();
     closeBatchTimeout->Stop();
-    if (p.cleanupto() > cleanUpTo) {
-		// Clean log up to the lowest committed entry by any replica
-		cleanUpTo = p.cleanupto();
-		CleanLog(); 
-	} else if (p.cleanupto() < cleanUpTo) {
-		RPanic("cleanUpTo decreased! Got " FMT_OPNUM ", had " FMT_OPNUM, 
-				p.cleanupto(), cleanUpTo);
-	}
 
 }
 
@@ -837,21 +839,7 @@ VRReplica::HandlePrepare(const TransportAddress &remote,
         RPanic("Unexpected PREPARE: I'm the leader of this view");
     }
 
-    if (msg.cleanupto() > lastCommitted) {
-		RPanic("Asking me to clean an entry after my lastCommitted!");
-	}
-
-	if (msg.cleanupto() > cleanUpTo) {
-		// Clean log up to the lowest committed entry by any replica
-		cleanUpTo = msg.cleanupto();
-		CleanLog(); 
-	} else if (msg.cleanupto() < cleanUpTo) {
-		// A node can see a lower cleanUpTo if the leader fell behind: when it reconstructs
-		// state, it will use its own cleanUpTo as a "safe" value, and will update it 
-		// later once it hears from all the other replicas. 
-		RWarning("cleanUpTo decreased! Got " FMT_OPNUM ", had " FMT_OPNUM, 
-				msg.cleanupto(), cleanUpTo);
-	}
+   
 
     ASSERT(msg.batchstart() <= msg.opnum());
     ASSERT_EQ(msg.opnum()-msg.batchstart()+1, (unsigned)msg.request_size());
