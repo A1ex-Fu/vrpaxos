@@ -155,9 +155,6 @@ protected:
 
 
 
-// /**
-
-
 
 
 TEST_P(VRTest, OneOp)
@@ -633,9 +630,6 @@ TEST_P(VRTest, ManyClients)
 
 
 
-// */
-
-
 
 
 
@@ -718,6 +712,222 @@ TEST_P(VRTest, Stress)
         delete c;
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+TEST_P(VRTest, StressDropClientReqs)
+{
+    const int NUM_CLIENTS = 10;
+    const int MAX_REQS = 100;
+    const int MAX_DELAY = 1;
+    const int DROP_PROBABILITY = 10; // 1/x
+    
+    std::vector<VRClient *> clients;
+    std::vector<int> lastReq;
+    std::vector<Client::continuation_t> upcalls;
+    for (int i = 0; i < NUM_CLIENTS; i++) {
+        clients.push_back(new VRClient(*config, transport));
+        lastReq.push_back(0);
+        upcalls.push_back([&, i](const string &req, const string &reply) {
+                EXPECT_EQ("reply: "+RequestOp(lastReq[i]), reply);
+                lastReq[i] += 1;
+                if (lastReq[i] < MAX_REQS) {
+                    clients[i]->Invoke(RequestOp(lastReq[i]), upcalls[i]);
+                }
+            });
+        clients[i]->Invoke(RequestOp(lastReq[i]), upcalls[i]);
+    }
+
+    srand(time(NULL));
+    
+    // Delay messages from clients by a random amount, and drop some
+    // of them
+    transport->AddFilter(10, [=](TransportReceiver *src, int srcIdx,
+                                TransportReceiver *dst, int dstIdx,
+                                Message &m, uint64_t &delay) {
+                             if (srcIdx == -1) {
+                                 delay = rand() % MAX_DELAY;
+                             }
+                             return ((rand() % DROP_PROBABILITY) != 0);
+                         });
+    
+    // This could take a while; simulate two hours
+    transport->Timer(7200000, [&]() {
+            transport->CancelAllTimers();
+        });
+
+    transport->Run();
+
+    for (int i = 0; i < config->n; i++) {
+		if (IsWitness(i)) {
+			continue;
+		}
+        ASSERT_EQ(NUM_CLIENTS * MAX_REQS, apps[i]->ops.size());
+    }
+
+    for (int i = 0; i < NUM_CLIENTS*MAX_REQS; i++) {
+        for (int j = 0; j < config->n; j++) {
+			if (IsWitness(j)) {
+				continue;
+			}
+            ASSERT_EQ(apps[0]->ops[i], apps[j]->ops[i]);
+        }
+    }
+
+    for (VRClient *c : clients) {
+        delete c;
+    }
+}
+
+
+
+TEST_P(VRTest, StressDropNodeReqs)
+{
+    const int NUM_CLIENTS = 10;
+    const int MAX_REQS = 100;
+    const int MAX_DELAY = 1;
+    const int DROP_PROBABILITY = 10; // 1/x
+    
+    std::vector<VRClient *> clients;
+    std::vector<int> lastReq;
+    std::vector<Client::continuation_t> upcalls;
+    for (int i = 0; i < NUM_CLIENTS; i++) {
+        clients.push_back(new VRClient(*config, transport));
+        lastReq.push_back(0);
+        upcalls.push_back([&, i](const string &req, const string &reply) {
+                EXPECT_EQ("reply: "+RequestOp(lastReq[i]), reply);
+                lastReq[i] += 1;
+                if (lastReq[i] < MAX_REQS) {
+                    clients[i]->Invoke(RequestOp(lastReq[i]), upcalls[i]);
+                }
+            });
+        clients[i]->Invoke(RequestOp(lastReq[i]), upcalls[i]);
+    }
+
+    srand(time(NULL));
+    
+    // Delay messages from nodes by a random amount, and drop some
+    // of them
+    transport->AddFilter(10, [=](TransportReceiver *src, int srcIdx,
+                                TransportReceiver *dst, int dstIdx,
+                                Message &m, uint64_t &delay) {
+                             if (srcIdx > -1) {
+                                 delay = rand() % MAX_DELAY;
+                             }
+                             return ((rand() % DROP_PROBABILITY) != 0);
+                         });
+    
+    // This could take a while; simulate two hours
+    transport->Timer(7200000, [&]() {
+            transport->CancelAllTimers();
+        });
+
+    transport->Run();
+
+    for (int i = 0; i < config->n; i++) {
+		if (IsWitness(i)) {
+			continue;
+		}
+        ASSERT_EQ(NUM_CLIENTS * MAX_REQS, apps[i]->ops.size());
+    }
+
+    for (int i = 0; i < NUM_CLIENTS*MAX_REQS; i++) {
+        for (int j = 0; j < config->n; j++) {
+			if (IsWitness(j)) {
+				continue;
+			}
+            ASSERT_EQ(apps[0]->ops[i], apps[j]->ops[i]);
+        }
+    }
+
+    for (VRClient *c : clients) {
+        delete c;
+    }
+}
+
+TEST_P(VRTest, StressDropAnyReqs)
+{
+    const int NUM_CLIENTS = 10;
+    const int MAX_REQS = 100;
+    const int DROP_PROBABILITY = 3; // 1/x
+    
+    std::vector<VRClient *> clients;
+    std::vector<int> lastReq;
+    std::vector<Client::continuation_t> upcalls;
+    for (int i = 0; i < NUM_CLIENTS; i++) {
+        clients.push_back(new VRClient(*config, transport, i));
+        lastReq.push_back(0);
+        upcalls.push_back([&, i](const string &req, const string &reply) {
+                EXPECT_EQ("reply: "+RequestOp(lastReq[i]), reply);
+                lastReq[i] += 1;
+                if (lastReq[i] < MAX_REQS) {
+                    clients[i]->Invoke(RequestOp(lastReq[i]), upcalls[i]);
+                }
+            });
+        clients[i]->Invoke(RequestOp(lastReq[i]), upcalls[i]);
+    }
+	int dropIdx = std::numeric_limits<int>::max();  // Invalid dropIdx means drop nothing
+	auto t = time(NULL);
+    srand(t);
+	Notice("Seed: %lu", t); 
+    
+    // Delay messages from clients by a random amount, and drop some
+    // of them
+    transport->AddFilter(10, [&dropIdx](TransportReceiver *src, int srcIdx,
+                                TransportReceiver *dst, int dstIdx,
+                                Message &m, uint64_t &delay) {
+							 auto p = rand() % DROP_PROBABILITY;
+							 if (dropIdx == std::numeric_limits<int>::max() && p == 0) {
+							 	// Maybe drop this src's packets for a bit 
+								dropIdx = srcIdx; 
+							 } else if (dropIdx == srcIdx && p > 0) {
+							 	// Stop dropping src's packets
+								dropIdx = std::numeric_limits<int>::max(); 
+							 }
+							 return dropIdx != srcIdx;
+                         });
+    
+    // This could take a while; simulate two hours
+    transport->Timer(7200000, [&]() {
+            transport->CancelAllTimers();
+        });
+
+    transport->Run();
+
+    for (int i = 0; i < config->n; i++) {
+		if (IsWitness(i)) {
+			continue;
+		}
+        ASSERT_EQ(NUM_CLIENTS * MAX_REQS, apps[i]->ops.size());
+    }
+
+    for (int i = 0; i < NUM_CLIENTS*MAX_REQS; i++) {
+        for (int j = 0; j < config->n; j++) {
+			if (IsWitness(j)) {
+				continue;
+			}
+            ASSERT_EQ(apps[0]->ops[i], apps[j]->ops[i]);
+        }
+    }
+
+    for (VRClient *c : clients) {
+        delete c;
+    }
+}
+
+
+
+
 
 INSTANTIATE_TEST_CASE_P(Batching,
                         VRTest,
