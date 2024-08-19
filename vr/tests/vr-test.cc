@@ -282,69 +282,61 @@ TEST_P(VRTest, ManyOps)
 
 
 //TODO - decide what to do. Failed replica means that the min number of acks cannot be achieved
-// TEST_P(VRTest, FailedReplica)
-// {
-//     Warning("starting failed replica test");
-//     Client::continuation_t upcall = [&](const string &req, const string &reply) {
-//         EXPECT_EQ(req, LastRequestOp());
-//         EXPECT_EQ(reply, "reply: "+LastRequestOp());
+TEST_P(VRTest, FailedReplica)
+{
+    Warning("starting failed replica test");
+    Client::continuation_t upcall = [&](const string &req, const string &reply) {
+        EXPECT_EQ(req, LastRequestOp());
+        EXPECT_EQ(reply, "reply: "+LastRequestOp());
 
-//         // Not guaranteed that any replicas except the leader have
-//         // executed this request
-//         EXPECT_EQ(apps[0]->ops.back(), req);
+        // Not guaranteed that any replicas except the leader have
+        // executed this request
+        EXPECT_EQ(apps[0]->ops.back(), req);
 
-//         if (requestNum < 9) {
-//             ClientSendNext(upcall);
-//         } else {
-//             transport->CancelAllTimers();
-//         }
-//     };
+        if (requestNum < 9) {
+            ClientSendNext(upcall);
+        } else {
+            transport->CancelAllTimers();
+        }
+    };
     
-//     ClientSendNext(upcall);
+    ClientSendNext(upcall);
 
-//     // Drop messages to or from replica 1
-//     transport->AddFilter(10, [](TransportReceiver *src, int srcIdx,
-//                                 TransportReceiver *dst, int dstIdx,
-//                                 Message &m, uint64_t &delay) {
-//                              if ((srcIdx == 2) || (dstIdx == 2)) {
-//                                  return false;
-//                              }
-//                              return true;
-//                          });
+    // Drop messages to or from replica 1
+    transport->AddFilter(10, [](TransportReceiver *src, int srcIdx,
+                                TransportReceiver *dst, int dstIdx,
+                                Message &m, uint64_t &delay) {
+                             if ((srcIdx == 1) || (dstIdx == 1)) {
+                                 return false;
+                             }
+                             return true;
+                         });
     
-//     transport->Run();
+    transport->Run();
 
-//     // By now, they all should have executed the last request.
-//     // for (int i = 0; i < config->n; i++) {
-//     //     if (i == 1) {
-//     //         continue;
-//     //     }
-//     //     EXPECT_EQ(10, apps[i]->ops.size());
-//     //     for (int j = 0; j < 10; j++) {
-//     //         EXPECT_EQ(RequestOp(j), apps[i]->ops[j]);            
-//     //     }
-//     // }
+    // By now, they all should have executed the last request.
+    // for (int i = 0; i < config->n; i++) {
+    //     if (i == 1) {
+    //         continue;
+    //     }
+    //     EXPECT_EQ(10, apps[i]->ops.size());
+    //     for (int j = 0; j < 10; j++) {
+    //         EXPECT_EQ(RequestOp(j), apps[i]->ops[j]);            
+    //     }
+    // }
 
-//     for (int i = 0; i < config->n; i++) {
-//         if (i == 2) {
-//             EXPECT_EQ(0, apps[i]->ops.size());
-// 			EXPECT_EQ(0, static_cast<VRReplica *>(replicas[i])->GetLogSize());
-//         } else {
-// 			if (!IsWitness(i)) {
-// 				// Replicas should have executed these ops
-// 				EXPECT_EQ(10, apps[i]->ops.size());
-// 				for (int j = 0; j < 10; j++) {
-// 					EXPECT_EQ(RequestOp(j), apps[i]->ops[j]);            
-// 				}
-// 				// Non-failed replicas should have full log
-// 				EXPECT_EQ(10, static_cast<VRReplica *>(replicas[i])->GetLogSize());
-// 			} else {
-// 				// Witnesses should have full log
-// 				EXPECT_EQ(10, static_cast<VRWitness *>(replicas[i])->GetLogSize());
-// 			}
-// 		}
-//     }
-// }
+    for (int i = 0; i < config->n; i++) {
+        if (!IsWitness(i)) {
+            // Replicas should have executed these ops
+            EXPECT_EQ(10, apps[i]->ops.size());
+            for (int j = 0; j < 10; j++) {
+                EXPECT_EQ(RequestOp(j), apps[i]->ops[j]);            
+            }
+            // Non-failed replicas should have full log
+            EXPECT_EQ(10, static_cast<VRReplica *>(replicas[i])->GetLogSize());
+        }
+    }
+}
 
 // TEST_P(VRTest, StateTransfer)
 // {
@@ -728,7 +720,7 @@ TEST_P(VRTest, Stress)
 TEST_P(VRTest, StressDropClientReqs)
 {
     const int NUM_CLIENTS = 10;
-    const int MAX_REQS = 100;
+    const int MAX_REQS = 1000;
     const int MAX_DELAY = 1;
     const int DROP_PROBABILITY = 10; // 1/x
     
@@ -762,7 +754,7 @@ TEST_P(VRTest, StressDropClientReqs)
                          });
     
     // This could take a while; simulate two hours
-    transport->Timer(7200000, [&]() {
+    transport->Timer(72000000, [&]() {
             transport->CancelAllTimers();
         });
 
@@ -794,7 +786,7 @@ TEST_P(VRTest, StressDropClientReqs)
 TEST_P(VRTest, StressDropNodeReqs)
 {
     const int NUM_CLIENTS = 10;
-    const int MAX_REQS = 100;
+    const int MAX_REQS = 1000;
     const int MAX_DELAY = 1;
     const int DROP_PROBABILITY = 10; // 1/x
     
@@ -828,7 +820,7 @@ TEST_P(VRTest, StressDropNodeReqs)
                          });
     
     // This could take a while; simulate two hours
-    transport->Timer(7200000, [&]() {
+    transport->Timer(72000000, [&]() {
             transport->CancelAllTimers();
         });
 
@@ -858,8 +850,8 @@ TEST_P(VRTest, StressDropNodeReqs)
 TEST_P(VRTest, StressDropAnyReqs)
 {
     const int NUM_CLIENTS = 10;
-    const int MAX_REQS = 100;
-    const int DROP_PROBABILITY = 3; // 1/x
+    const int MAX_REQS = 1000;
+    const int DROP_PROBABILITY = 10; // 1/x
     
     std::vector<VRClient *> clients;
     std::vector<int> lastReq;
@@ -898,7 +890,7 @@ TEST_P(VRTest, StressDropAnyReqs)
                          });
     
     // This could take a while; simulate two hours
-    transport->Timer(7200000, [&]() {
+    transport->Timer(72000000, [&]() {
             transport->CancelAllTimers();
         });
 

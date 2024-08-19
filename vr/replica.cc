@@ -301,7 +301,7 @@ VRReplica::OnHeartbeatTimer()
 
         if(pair.second >= heartbeatMissThreshold){
             //node is dead
-            if (specpaxos::IsWitness(pair.first)){
+            if (specpaxos::IsWitness(pair.first) && isDelegated){
                 Warning("turned off delegation");
                 isDelegated = false;
             }else{
@@ -508,7 +508,7 @@ VRReplica::ResendPrepare()
     }
     RNotice("Resending prepare");
     if(isDelegated && AmLeader()){
-        RNotice("Did NOT resend prepare because the leader is delegated");
+        Warning("Did NOT resend prepare because the leader is delegated");
         return;
     }
     if (!(transport->SendMessageToAll(this, lastPrepare))) {
@@ -548,6 +548,7 @@ VRReplica::CloseBatch()
 
     lastPrepare = p;
     if(!isDelegated) {
+        Warning("send prepares");
         if (!(transport->SendMessageToAll(this, p))) {
             RWarning("Failed to send prepare message to all replicas");
         }else{
@@ -658,7 +659,7 @@ void
 VRReplica::HandleRequest(const TransportAddress &remote,
                          const RequestMessage &msg)
 {
-
+    
     viewstamp_t v;
     Latency_Start(&requestLatency);
     
@@ -723,61 +724,62 @@ VRReplica::HandleRequest(const TransportAddress &remote,
     }
 
 
-    // Update the client table
-    UpdateClientTable(msg.req());
+    if(!isDelegated){
+        // Update the client table
+        UpdateClientTable(msg.req());
 
-    // Leader Upcall
-    bool replicate = false;
-    string res;
-    LeaderUpcall(lastCommitted, msg.req().op(), replicate, res);
-    ClientTableEntry &cte =
-        clientTable[msg.req().clientid()];
-    
-    // Check whether this request should be committed to replicas
-    if (!replicate) {
-        RDebug("Executing request failed. Not committing to replicas");
-        ReplyMessage reply;
-
-        reply.set_reply(res);
-        reply.set_view(0);
-        reply.set_opnum(0);
-        reply.set_clientreqid(msg.req().clientreqid());
-        cte.replied = true;
-        cte.reply = reply;
-        transport->SendMessage(this, remote, reply);
-        Latency_EndType(&requestLatency, 'f');
-    } else {
-        //request will be added to log upon receival of witnessDecision when delegated
-        if(!isDelegated){
-            Request request;
-            request.set_op(res);
-            request.set_clientid(msg.req().clientid());
-            request.set_clientreqid(msg.req().clientreqid());
+        // Leader Upcall
+        bool replicate = false;
+        string res;
+        LeaderUpcall(lastCommitted, msg.req().op(), replicate, res);
+        ClientTableEntry &cte =
+            clientTable[msg.req().clientid()];
         
-            /* Assign it an opnum */
-            ++this->lastOp;
-            v.view = this->view;
-            v.opnum = this->lastOp;
+        
+        // Check whether this request should be committed to replicas
+        if (!replicate) {
+            // Warning("Executing request failed. Not committing to replicas");
+            ReplyMessage reply;
 
-            RDebug("Received REQUEST, assigning " FMT_VIEWSTAMP, VA_VIEWSTAMP(v));
+            reply.set_reply(res);
+            reply.set_view(0);
+            reply.set_opnum(0);
+            reply.set_clientreqid(msg.req().clientreqid());
+            cte.replied = true;
+            cte.reply = reply;
+            transport->SendMessage(this, remote, reply);
+            Latency_EndType(&requestLatency, 'f');
+        } else {
+            //request will be added to log upon receival of witnessDecision when delegated
+                Request request;
+                request.set_op(res);
+                request.set_clientid(msg.req().clientid());
+                request.set_clientreqid(msg.req().clientreqid());
+            
+                /* Assign it an opnum */
+                ++this->lastOp;
+                v.view = this->view;
+                v.opnum = this->lastOp;
 
-            /* Add the request to my log */
-            log.Append(v, request, LOG_STATE_PREPARED);
+                // Warning("Received REQUEST, assigning " FMT_VIEWSTAMP, VA_VIEWSTAMP(v));
 
-            if (batchComplete ||
-                (lastOp - lastBatchEnd+1 > (unsigned int)batchSize)) {
-                CloseBatch();
-            } else {
-                RDebug("Keeping in batch");
-                if (!closeBatchTimeout->Active()) {
-                    closeBatchTimeout->Start();
+                /* Add the request to my log */
+                log.Append(v, request, LOG_STATE_PREPARED);
+
+                if (batchComplete ||
+                    (lastOp - lastBatchEnd+1 > (unsigned int)batchSize)) {
+                    CloseBatch();
+                } else {
+                    Warning("Keeping in batch");
+                    if (!closeBatchTimeout->Active()) {
+                        closeBatchTimeout->Start();
+                    }
                 }
-            }
-        }
 
-        nullCommitTimeout->Reset();
-        Latency_End(&requestLatency);
-        
+            nullCommitTimeout->Reset();
+            Latency_End(&requestLatency);
+            
+        }
     }
 }
 
@@ -806,7 +808,7 @@ void
 VRReplica::HandlePrepare(const TransportAddress &remote,
                          const PrepareMessage &msg)
 {
-
+    Warning("handle prepares");
     if (msg.view() == this->view && this->status == STATUS_VIEW_CHANGE) {
 		if (AmLeader()) {
 			RPanic("Unexpected PREPARE: I'm the leader of this view");
@@ -901,6 +903,8 @@ void
 VRReplica::HandlePrepareOK(const TransportAddress &remote,
                            const PrepareOKMessage &msg)
 {
+
+    Warning("handle prepare ok");
 
     RDebug("Received PREPAREOK <" FMT_VIEW ", "
            FMT_OPNUM  "> from replica %d",
