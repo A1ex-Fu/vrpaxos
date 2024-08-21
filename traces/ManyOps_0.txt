@@ -1,0 +1,210 @@
+Witness 1 received RequestMessage from Client 3
+    RequestMessage:
+        req {
+          op: "test: 0"
+          clientid: 15429847757414396793
+          clientreqid: 1
+        }
+
+
+Witness 1 sent WitnessDecision to {Replica 0, Replica 2}
+    WitnessDecision:
+        view: 0
+        opnum: 1
+        replicaIdx: 1
+        req {
+          op: "test: 0"
+          clientid: 15429847757414396793
+          clientreqid: 1
+        }
+
+
+Witness 1 received RequestMessage from Client 3
+    RequestMessage:
+        req {
+          op: "test: 1"
+          clientid: 15429847757414396793
+          clientreqid: 2
+        }
+
+
+Witness 1 sent WitnessDecision to {Replica 0, Replica 2}
+    WitnessDecision:
+        view: 0
+        opnum: 2
+        replicaIdx: 1
+        req {
+          op: "test: 1"
+          clientid: 15429847757414396793
+          clientreqid: 2
+        }
+
+
+Witness 1 received RequestMessage from Client 3
+    RequestMessage:
+        req {
+          op: "test: 2"
+          clientid: 15429847757414396793
+          clientreqid: 3
+        }
+
+
+Witness 1 sent WitnessDecision to {Replica 0, Replica 2}
+    WitnessDecision:
+        view: 0
+        opnum: 3
+        replicaIdx: 1
+        req {
+          op: "test: 2"
+          clientid: 15429847757414396793
+          clientreqid: 3
+        }
+
+
+Witness 1 received RequestMessage from Client 3
+    RequestMessage:
+        req {
+          op: "test: 3"
+          clientid: 15429847757414396793
+          clientreqid: 4
+        }
+
+
+Witness 1 sent WitnessDecision to {Replica 0, Replica 2}
+    WitnessDecision:
+        view: 0
+        opnum: 4
+        replicaIdx: 1
+        req {
+          op: "test: 3"
+          clientid: 15429847757414396793
+          clientreqid: 4
+        }
+
+
+Witness 1 received RequestMessage from Client 3
+    RequestMessage:
+        req {
+          op: "test: 4"
+          clientid: 15429847757414396793
+          clientreqid: 5
+        }
+
+
+Witness 1 sent WitnessDecision to {Replica 0, Replica 2}
+    WitnessDecision:
+        view: 0
+        opnum: 5
+        replicaIdx: 1
+        req {
+          op: "test: 4"
+          clientid: 15429847757414396793
+          clientreqid: 5
+        }
+
+
+Witness 1 received RequestMessage from Client 3
+    RequestMessage:
+        req {
+          op: "test: 5"
+          clientid: 15429847757414396793
+          clientreqid: 6
+        }
+
+
+Witness 1 sent WitnessDecision to {Replica 0, Replica 2}
+    WitnessDecision:
+        view: 0
+        opnum: 6
+        replicaIdx: 1
+        req {
+          op: "test: 5"
+          clientid: 15429847757414396793
+          clientreqid: 6
+        }
+
+
+Witness 1 received RequestMessage from Client 3
+    RequestMessage:
+        req {
+          op: "test: 6"
+          clientid: 15429847757414396793
+          clientreqid: 7
+        }
+
+
+Witness 1 sent WitnessDecision to {Replica 0, Replica 2}
+    WitnessDecision:
+        view: 0
+        opnum: 7
+        replicaIdx: 1
+        req {
+          op: "test: 6"
+          clientid: 15429847757414396793
+          clientreqid: 7
+        }
+
+
+Witness 1 received RequestMessage from Client 3
+    RequestMessage:
+        req {
+          op: "test: 7"
+          clientid: 15429847757414396793
+          clientreqid: 8
+        }
+
+
+Witness 1 sent WitnessDecision to {Replica 0, Replica 2}
+    WitnessDecision:
+        view: 0
+        opnum: 8
+        replicaIdx: 1
+        req {
+          op: "test: 7"
+          clientid: 15429847757414396793
+          clientreqid: 8
+        }
+
+
+Witness 1 received RequestMessage from Client 3
+    RequestMessage:
+        req {
+          op: "test: 8"
+          clientid: 15429847757414396793
+          clientreqid: 9
+        }
+
+
+Witness 1 sent WitnessDecision to {Replica 0, Replica 2}
+    WitnessDecision:
+        view: 0
+        opnum: 9
+        replicaIdx: 1
+        req {
+          op: "test: 8"
+          clientid: 15429847757414396793
+          clientreqid: 9
+        }
+
+
+Witness 1 received RequestMessage from Client 3
+    RequestMessage:
+        req {
+          op: "test: 9"
+          clientid: 15429847757414396793
+          clientreqid: 10
+        }
+
+
+Witness 1 sent WitnessDecision to {Replica 0, Replica 2}
+    WitnessDecision:
+        view: 0
+        opnum: 10
+        replicaIdx: 1
+        req {
+          op: "test: 9"
+          clientid: 15429847757414396793
+          clientreqid: 10
+        }
+
+

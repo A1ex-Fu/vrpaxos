@@ -56,9 +56,16 @@ public:
     void ReceiveMessage(const TransportAddress &remote,
                         const string &type, const string &data);
 
+    //______________________
+    //for testing
+    std::string filename = "trace.txt";
     size_t GetLogSize();
+    void UpdateTraceFile(std::string filename);
+
+
 
 private:
+
     view_t view;
     opnum_t lastCommitted;
     opnum_t lastOp;
@@ -76,6 +83,11 @@ private:
     Latency_t requestLatency;
     Latency_t executeAndReplyLatency;
 
+    bool printingTraces;
+    std::ofstream traceFile;
+
+
+
     void CommitUpTo(opnum_t upto);
     void EnterView(view_t newview);
     void StartViewChange(view_t newview);
@@ -92,6 +104,11 @@ private:
     void HandleHeartbeat(const TransportAddress &remote,
                          const proto::Heartbeat &msg);
     bool SendMessageToAllReplicas(const ::google::protobuf::Message &m);
+    
+    void WriteToTrace(const std::string& line);
+    std::string getRole(int input);
+    void SendAndWrite(const ::google::protobuf::Message &msg, int code);
+    void WriteMessageContents(const ::google::protobuf::Message &msg);
     
 };
 

@@ -43,6 +43,8 @@
 
 #include <algorithm>
 #include <random>
+#include <fstream>
+#include <sstream>
 
 #define RDebug(fmt, ...) Debug("[%d] " fmt, myIdx, ##__VA_ARGS__)
 #define RNotice(fmt, ...) Notice("[%d] " fmt, myIdx, ##__VA_ARGS__)
@@ -84,6 +86,17 @@ VRWitness::VRWitness(Configuration config, int myIdx,
     } else {
         // RWarning("Witness initialized with initialize set to false; witness");
     }
+
+    //___________________________________________
+    //for tracing
+    //Flag to turn off trace printing so the tests can be run in a reasonable amount of time
+    this->printingTraces = true;
+
+    traceFile.open(filename);
+    if (!traceFile.is_open()) {
+        std::cerr << "Failed to open file: " << filename << std::endl;
+        Panic("Failed to open file %s", filename.c_str());
+    }
 }
 
 VRWitness::~VRWitness()
@@ -93,6 +106,10 @@ VRWitness::~VRWitness()
     Latency_Dump(&executeAndReplyLatency);
 
     delete heartbeatCheckTimeout;
+
+    if(traceFile.is_open()) {
+        traceFile.close();
+    }
 }
 
 
@@ -135,6 +152,17 @@ VRWitness::EnterView(view_t newview)
 }
 
 
+std::string VRWitness::getRole(int input) {
+    if (input >= configuration.n) {
+        return "Client";
+    } else if (IsWitness(input)) {
+        return "Witness";
+    } else {
+        return "Replica";
+    }
+}
+
+
 void
 VRWitness::ReceiveMessage(const TransportAddress &remote,
                           const string &type, const string &data)
@@ -150,22 +178,34 @@ VRWitness::ReceiveMessage(const TransportAddress &remote,
 
     // RWarning("Received %s message in VR Witness from %d", type.c_str(), srcAddr);
     
+    std::stringstream ss;
+    size_t pos = type.rfind('.');
+    std::string messageName = (pos != std::string::npos) ? type.substr(pos + 1) : type;
+
+    ss << "received " << messageName << " from " << getRole(srcAddr) << " " << srcAddr;
+    WriteToTrace(ss.str());
+    
     if (type == request.GetTypeName()) {
         Latency_Start(&requestLatency);
         request.ParseFromString(data);
+        WriteMessageContents(request);
         HandleRequest(remote, request);
         Latency_EndType(&requestLatency, 'i');
     } else if (type == startViewChange.GetTypeName()) {
         startViewChange.ParseFromString(data);
+        WriteMessageContents(startViewChange);
         HandleStartViewChange(remote, startViewChange);
     } else if (type == startView.GetTypeName()) {
         startView.ParseFromString(data);
+        WriteMessageContents(startView);
         HandleStartView(remote, startView);
     } else if (type == heartbeat.GetTypeName()) {
         heartbeat.ParseFromString(data);
+        WriteMessageContents(heartbeat);
         HandleHeartbeat(remote, heartbeat);
     } else if (type == chainMessage.GetTypeName()) {
         chainMessage.ParseFromString(data);
+        WriteMessageContents(chainMessage);
         HandleChainMessage(remote, chainMessage);
     } else {
         RPanic("Received unexpected message type in VR witness: %s",
@@ -189,9 +229,8 @@ VRWitness::StartViewChange(view_t newview)
     m.set_view(newview);
     m.set_replicaidx(myIdx);
     m.set_lastcommitted(lastCommitted);
-    if (!transport->SendMessageToAll(this, m)) {
-        RWarning("Failed to send StartViewChange message to all replicas");
-    }
+
+    SendAndWrite(m, -2);
 }
 
 void
@@ -199,7 +238,7 @@ VRWitness::HandleRequest(const TransportAddress &remote,
                          const RequestMessage &msg)
 {
     if (status != STATUS_NORMAL) {
-        RNotice("Ignoring request due to abnormal status");
+        // RNotice("Ignoring request due to abnormal status");
         return;
     }
     
@@ -242,13 +281,10 @@ VRWitness::HandleRequest(const TransportAddress &remote,
                 reply.set_opnum(slotNum);
                 reply.set_replicaidx(myIdx);
                 *reply.mutable_req() = msg.req();
-                reply.set_reqstr(msg.reqstr());
+                // reply.set_reqstr(msg.reqstr());
 
-                if(!SendMessageToAllReplicas(reply)){
-                    RWarning("Failed to send prepare message to all replicas - from witness HandleRequest");
-                }else{
-                    // Warning("[%d] SENT WITNESSDECISION   -    client: %d; reply: %s; slot: %d", myIdx, reply.req().clientreqid(), reply.reqstr().c_str(), reply.opnum());
-                }
+                SendAndWrite(reply, -1);
+                            
             } else {
                 //not the last witness
                 Warning("CHAINING");
@@ -259,9 +295,7 @@ VRWitness::HandleRequest(const TransportAddress &remote,
                 reply.set_replicaidx(myIdx);
                 *reply.mutable_req() = msg.req();
 
-                if(!transport->SendMessageToReplica(this, (myIdx+2), reply)){
-                    RWarning("Failed to send prepare message to next witness in chain");
-                }
+                SendAndWrite(reply, (myIdx+2));
             }
 
         }
@@ -320,12 +354,11 @@ VRWitness::HandleStartViewChange(const TransportAddress &remote,
             log.Dump(minCommitted,
                      dvc.mutable_entries());
 
-            if (!(transport->SendMessageToReplica(this, leader, dvc))) {
-                RWarning("Failed to send DoViewChange message to leader of new view");
-            }
+            SendAndWrite(dvc, leader);
         }
     }
 }
+
 void
 VRWitness::HandleStartView(const TransportAddress &remote,
                            const StartViewMessage &msg)
@@ -362,16 +395,13 @@ VRWitness::HandleStartView(const TransportAddress &remote,
                     msg.entries().end());
     }
 
-    RPanic("got startviewmessage");
+
     EnterView(msg.view());
     opnum_t oldLastOp = lastOp;
     lastOp = msg.lastop();
 
 
     CommitUpTo(msg.lastcommitted());
-
-    //presumably, witnesses will be up to date but not sure yet whether sending prepareOKs is
-    // SendPrepareOKs(oldLastOp);
 }
 
 
@@ -427,9 +457,7 @@ VRWitness::HandleChainMessage(const TransportAddress &remote,
             reply.set_replicaidx(myIdx);
             *reply.mutable_req() = msg.req();
 
-            if(!SendMessageToAllReplicas(reply)){
-                RWarning("Failed to send prepare message to all replicas - from witness HandleRequest");
-            }
+            SendAndWrite(reply, -1);
         } else {
             //not the last witness
             //send chainmessage to next witness - every other node is a witness
@@ -439,9 +467,7 @@ VRWitness::HandleChainMessage(const TransportAddress &remote,
             reply.set_replicaidx(myIdx);
             *reply.mutable_req() = msg.req();
             
-            if(!transport->SendMessageToReplica(this, (myIdx+2), reply)){
-                RWarning("Failed to send prepare message to next witness in chain");
-            }
+            SendAndWrite(reply, (myIdx+2));
         }
     }
 
@@ -455,12 +481,13 @@ VRWitness::HandleHeartbeat(const TransportAddress &remote,
            msg.slotexecuted());
 
 
-    // note: there is an issue where the witness is a part of a minority that believed the leader
-    //   was unresponsive. In the java implementation, it would've ignored that fact and continued
+    // note: there was an (extremely annoying) issue where the witness is a part of a minority 
+    //   that believed the leader was unresponsive. 
+    //   In the java implementation, it would've ignored that fact and continued
     //   believing the leader was responsive until another replica said otherwise. However, in this 
     //   system, the witness is allowed to believe the leader is dead. They can start searching for 
     //   a quorum they might never acheive and then will leave the system undelegated for no good 
-    //   reason. 
+    //   reason.
 
     if(msg.view()<view){
         Warning("got old heartbeat");
@@ -485,6 +512,7 @@ VRWitness::HandleHeartbeat(const TransportAddress &remote,
 				msg.cleanupto(), cleanUpTo);
 	}
 
+    //got valid hb - reset hbcheck and send a hbreply
     heartbeatCheckTimeout->Reset();
     HeartbeatReply reply;
     reply.set_view(view);
@@ -493,17 +521,15 @@ VRWitness::HandleHeartbeat(const TransportAddress &remote,
     RDebug("Sending HBReply " FMT_VIEWSTAMP,
             reply.view(), reply.slotout());
 
-    // Warning("%d sending heartbeatreply to %d", myIdx, configuration.GetLeaderIndex(view));
-
-    if (!(transport->SendMessageToReplica(this,
-                                            configuration.GetLeaderIndex(view),
-                                            reply))) {
-        RWarning("Failed to send HBReply message to leader");
-    }
+    SendAndWrite(reply, configuration.GetLeaderIndex(view));
 }
 
 
-
+/**
+ * @brief lowest replica commit (GC-able indices)
+ * 
+ * @return opnum_t - lowest commit found
+ */
 opnum_t
 VRWitness::GetLowestReplicaCommit()
 {
@@ -511,16 +537,24 @@ VRWitness::GetLowestReplicaCommit()
 	return lowest;
 }
 
+/**
+ * @brief Garbage collects log up to the current cleanUpTo value
+ * 
+ */
 void
 VRWitness::CleanLog()
 {
-	/* 
-	 * Truncate the log up to the current cleanUpTo value.
-	 */
 	RNotice("Cleaning up to " FMT_OPNUM, cleanUpTo);
 	log.RemoveUpTo(cleanUpTo);
 }
 
+/**
+ * @brief send message @p msg to only the replica nodes in the system, not the witness nodes
+ * 
+ * @param msg - message to be sent
+ * @return true - if send was successful
+ * @return false - if any sends failed
+ */
 bool VRWitness::SendMessageToAllReplicas(const ::google::protobuf::Message &msg) {
     //replicas are odd numbered (but zero-index so start at 0)
     for(int i=0; i<configuration.n; i+=2){
@@ -539,9 +573,217 @@ bool VRWitness::SendMessageToAllReplicas(const ::google::protobuf::Message &msg)
     return true;
 }
 
+/**
+ * @brief testing function from vrw code
+ * 
+ * @return size_t - size of the log
+ */
 size_t VRWitness::GetLogSize(){
     return log.Size();
 }
+
+
+
+
+
+
+
+
+
+
+
+
+//________________________________________
+//trace code
+void VRWitness::UpdateTraceFile(std::string filename){
+    if (traceFile.is_open()) {
+        traceFile.close();
+    }
+    traceFile.open(filename);
+    if (!traceFile.is_open()) {
+        std::cerr << "Failed to open file: " << filename << std::endl;
+        Panic("Failed to open file %s", filename.c_str());
+    }
+    this->filename = filename;
+}
+
+/**
+ * @brief writes input string to trace file with the prefix "Witness {myIdx} "
+ * 
+ * @param line string to be written
+ */
+void VRWitness::WriteToTrace(const std::string& line) {
+    if(!printingTraces){
+        return;
+    }
+    // Check if the trace file is open
+    if (!traceFile.is_open()) {
+        // attempt to open the trace file
+        traceFile.open(filename, std::ios::out | std::ios::app);
+        if (!traceFile) {
+            throw std::ios_base::failure("failed to open trace file");
+        }
+    }
+
+    // write the line to the trace file
+    traceFile << "Witness " << myIdx << " " << line << std::endl;
+}
+
+
+/**
+ * @brief helps to indent debugStrings for print outs
+ * 
+ * @param debugString - string to be indented
+ * @return std::string - the indented string
+ */
+std::string indentDebugString(const std::string& debugString) {
+    std::stringstream indentedStream;
+    std::string line;
+    std::istringstream stream(debugString);
+
+    while (std::getline(stream, line)) {
+        indentedStream << "        " << line << "\n"; // 8 spaces
+    }
+
+    return indentedStream.str();
+}
+
+/**
+ * @brief Write the contents of the message to the trace.txt file
+ * 
+ * @param msg - message to write the contents of
+ */
+void VRWitness::WriteMessageContents(const ::google::protobuf::Message &msg) {
+    if(!printingTraces){
+        return;
+    }
+
+    if (!traceFile.is_open()) {
+        // attempt to open the trace file
+        traceFile.open(filename, std::ios::out | std::ios::app);
+        if (!traceFile) {
+            throw std::ios_base::failure("failed to open trace file");
+        }
+    }
+
+    std::string type = msg.GetTypeName();
+    std::stringstream ss;
+    size_t pos = type.rfind('.');
+    std::string messageName = (pos != std::string::npos) ? type.substr(pos + 1) : type;
+
+    ss << "    " << messageName << ":\n";
+
+    // indent content prints for fancier formatting
+
+
+    if (type == RequestMessage().GetTypeName()) {
+        const RequestMessage& request = dynamic_cast<const RequestMessage&>(msg);
+        if(request.DebugString().empty()){
+            Panic("empty req");
+        }
+        ss << indentDebugString(request.DebugString());
+    } else if (type == StartViewChangeMessage().GetTypeName()) {
+        const StartViewChangeMessage& startViewChange = dynamic_cast<const StartViewChangeMessage&>(msg);
+        ss << indentDebugString(startViewChange.DebugString());
+    } else if (type == StartViewMessage().GetTypeName()) {
+        const StartViewMessage& startView = dynamic_cast<const StartViewMessage&>(msg);
+        ss << indentDebugString(startView.DebugString());
+    } else if (type == Heartbeat().GetTypeName()) {
+        const Heartbeat& heartbeat = dynamic_cast<const Heartbeat&>(msg);
+        ss << indentDebugString(heartbeat.DebugString());
+    } else if (type == ChainMessage().GetTypeName()) {
+        const ChainMessage& chainMessage = dynamic_cast<const ChainMessage&>(msg);
+        ss << indentDebugString(chainMessage.DebugString());
+    } else if (type == WitnessDecision().GetTypeName()) {
+        const WitnessDecision& witnessDecision = dynamic_cast<const WitnessDecision&>(msg);
+        ss << indentDebugString(witnessDecision.DebugString());
+    } else if (type == HeartbeatReply().GetTypeName()) {
+        const HeartbeatReply& heartbeatReply = dynamic_cast<const HeartbeatReply&>(msg);
+        ss << indentDebugString(heartbeatReply.DebugString());
+    } else if (type == DoViewChangeMessage().GetTypeName()) {
+        const DoViewChangeMessage& dvc = dynamic_cast<const DoViewChangeMessage&>(msg);
+        ss << indentDebugString(dvc.DebugString());
+    } else {
+        RPanic("attempted to write unexpected message type in VR witness: %s", type.c_str());
+    }
+
+    traceFile << ss.str() << "\n" << std::endl;
+}
+
+
+
+
+
+
+/**
+ * @brief Sends messages and also writes to the trace.txt file
+ * 
+ * @param msg - message to send
+ * @param code - 0<=code<=configuration.n for sending to specific address code, 
+ *  -1 for sending to all replicas, and -2 for sending to all nodes 
+ */
+void VRWitness::SendAndWrite(const ::google::protobuf::Message &msg, int code){
+    size_t pos = msg.GetTypeName().rfind('.');
+    std::string messageName = (pos != std::string::npos) ? msg.GetTypeName().substr(pos + 1) : msg.GetTypeName();
+
+    std::stringstream ss;
+        
+    ss << "sent " << messageName << " to {";
+
+    if(code>=0 && code<=configuration.n){
+        //send to specific node with replicaIdx of code
+        if (!(transport->SendMessageToReplica(this,
+                                            code,
+                                            msg))) {
+            RWarning("Failed to send %s message to %s %d", messageName, getRole(code), code);
+            return;
+        }
+
+        ss << getRole(code) << " " << code;
+    }else if(code == -1){
+        //send to all replicas
+        if(!SendMessageToAllReplicas(msg)){
+            RWarning("Failed to send %s message to all replicas", messageName);
+            return;
+        }
+        
+        for(int i=0; i<configuration.n; i++){
+            if(!(myIdx==i || IsWitness(i))){
+                ss << getRole(i) << " " << i;
+                if(i!=configuration.n-1){
+                    ss << ", ";
+                }
+            }
+        }
+    }else if(code == -2){
+        //send to all nodes
+        if (!transport->SendMessageToAll(this, msg)) {
+            RWarning("Failed to send %s message to all nodes", messageName);
+            return;
+        } 
+
+        for(int i=0; i<configuration.n; i++){
+            if(!(myIdx==i)){
+                ss << getRole(i) << " " << i;
+                if(i!=configuration.n-1){
+                    ss << ", ";
+                }
+            }
+        }
+    }else{
+        Panic("invalid code %d", code);
+    }
+
+    //sends were all successful
+    ss << "}";
+    if(!printingTraces){
+        return;
+    }
+    WriteToTrace(ss.str());
+    WriteMessageContents(msg);
+} 
+
+
 
 
 } // namespace specpaxos::vr

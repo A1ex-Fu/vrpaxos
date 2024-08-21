@@ -4,7 +4,9 @@ package specpaxos.vr.proto;
 
 message RequestMessage {
     required specpaxos.Request req = 1;
-    optional string reqStr = 2;
+
+    // for testing purposes
+    // optional string reqStr = 2;
 }
 
 message ReplyMessage {
@@ -117,15 +119,33 @@ message RecoveryResponseMessage {
 }
 
 
+
+
+
+
+/**
+    New messages are below
+    ______________________________
+    basic translations:
+        ballot --> view
+        slotNum --> opnum
+        command --> request
+        log --> log (wow!)
+        slotOut --> lastCommitted
+        slotIn --> lastOp
+        sender --> replicaIdx
+*/
+
+
 message WitnessDecision {
     required uint64 view = 1;
     required uint64 opnum = 2;
     required uint32 replicaIdx = 3;
     required specpaxos.Request req = 4;
 
-    optional string reqStr = 5; 
+    // for testing purposes
+    // optional string reqStr = 5; 
 }
-
 
 message PaxosAck {
     required uint64 clientreqid = 1;
@@ -134,14 +154,12 @@ message PaxosAck {
     required uint64 n = 4;
 }
 
-
 message ChainMessage {
     required uint64 view = 1;
     required uint64 opnum = 2;
     required uint32 replicaIdx = 3;
     required specpaxos.Request req = 4;
 }
-
 
 message Heartbeat {
     required uint64 view = 1;

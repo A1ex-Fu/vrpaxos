@@ -1,0 +1,21 @@
+Witness 1 received RequestMessage from Client 3
+    RequestMessage:
+        req {
+          op: "test: 0"
+          clientid: 18441729220888124548
+          clientreqid: 1
+        }
+
+
+Witness 1 sent WitnessDecision to {Replica 0, Replica 2}
+    WitnessDecision:
+        view: 0
+        opnum: 1
+        replicaIdx: 1
+        req {
+          op: "test: 0"
+          clientid: 18441729220888124548
+          clientreqid: 1
+        }
+
+

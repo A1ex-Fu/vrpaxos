@@ -1,0 +1,94 @@
+Witness 1 received RequestMessage from Client 3
+    RequestMessage:
+        req {
+          op: "test: 0"
+          clientid: 2166000773711191042
+          clientreqid: 1
+        }
+
+
+Witness 1 sent WitnessDecision to {Replica 0, Replica 2}
+    WitnessDecision:
+        view: 0
+        opnum: 1
+        replicaIdx: 1
+        req {
+          op: "test: 0"
+          clientid: 2166000773711191042
+          clientreqid: 1
+        }
+
+
+Witness 1 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 1 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 1
+
+
+Witness 1 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 1 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 1
+
+
+Witness 1 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 1 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 1
+
+
+Witness 1 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 1 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 1
+
+
+Witness 1 received RequestMessage from Client 3
+    RequestMessage:
+        req {
+          op: "test: 0"
+          clientid: 2166000773711191042
+          clientreqid: 1
+        }
+
+
+Witness 1 sent WitnessDecision to {Replica 0, Replica 2}
+    WitnessDecision:
+        view: 0
+        opnum: 1
+        replicaIdx: 1
+        req {
+          op: "test: 0"
+          clientid: 2166000773711191042
+          clientreqid: 1
+        }
+
+

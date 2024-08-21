@@ -97,7 +97,15 @@ protected:
         for (int i = 0; i < config->n; i++) {
             apps.push_back(new VRTestApp());
             if(IsWitness(i)){
-                replicas.push_back(new VRWitness(*config, i, true, transport, apps[i])); 
+                // replicas.push_back(new VRWitness(*config, i, true, transport, apps[i])); 
+
+                auto witness = new VRWitness(*config, i, true, transport, apps[i]);
+                std::string formatted = ::testing::UnitTest::GetInstance()->current_test_info()->name() + std::string(".txt");
+                std::replace(formatted.begin(), formatted.end(), '/', '_');
+                formatted = std::string("traces/") + formatted;
+            
+                witness->UpdateTraceFile(formatted);
+                replicas.push_back(witness);
             }else{
                 replicas.push_back(new VRReplica(*config, i, true, transport, GetParam(), apps[i])); 
             }

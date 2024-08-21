@@ -130,7 +130,7 @@ VRClient::SendRequest()
     reqMsg.mutable_req()->set_op(pendingRequest->request);
     reqMsg.mutable_req()->set_clientid(clientid);
     reqMsg.mutable_req()->set_clientreqid(pendingRequest->clientReqId);
-    reqMsg.set_reqstr(pendingRequest->request);
+    // reqMsg.set_reqstr(pendingRequest->request);
     
     // Warning("sending message %s to all", reqMsg.reqstr().c_str());
     // XXX Try sending only to (what we think is) the leader first
@@ -172,6 +172,9 @@ VRClient::ReceiveMessage(const TransportAddress &remote,
         Client::ReceiveMessage(remote, type, data);
     }
 }
+
+
+
 
 void
 VRClient::HandleReply(const TransportAddress &remote,

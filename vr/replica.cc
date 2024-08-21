@@ -84,7 +84,7 @@ VRReplica::VRReplica(Configuration config, int myIdx,
 
 
     if (batchSize > 1) {
-        Notice("Batching enabled; batch size %d", batchSize);
+        // Notice("Batching enabled; batch size %d", batchSize);
     }
 
     this->viewChangeTimeout = new Timeout(transport, 5000, [this,myIdx]() {
@@ -115,7 +115,7 @@ VRReplica::VRReplica(Configuration config, int myIdx,
             SendRecoveryMessages();
         });
 
-    this->heartbeatTimeout = new Timeout(transport, 1000, [this]() {
+    this->heartbeatTimeout = new Timeout(transport, 1500, [this]() {
             // Warning("heartbeat timeout triggered");
             OnHeartbeatTimer();
         });
@@ -397,7 +397,7 @@ VRReplica::RequestStateTransfer()
         return;
     }
     
-    RNotice("Requesting state transfer: " FMT_VIEWSTAMP, view, lastCommitted);
+    // RNotice("Requesting state transfer: " FMT_VIEWSTAMP, view, lastCommitted);
 
     this->lastRequestStateTransferView = view;
     this->lastRequestStateTransferOpnum = lastCommitted;
@@ -511,7 +511,7 @@ VRReplica::ResendPrepare()
         Warning("Did NOT resend prepare because the leader is delegated");
         return;
     }
-    if (!(transport->SendMessageToAll(this, lastPrepare))) {
+    if (!(SendMessageToAllReplicas(lastPrepare))) {
         RWarning("Failed to ressend prepare message to all replicas");
     }else{
         // RWarning("reset heartbeattimeout in resendprepare");
@@ -548,8 +548,8 @@ VRReplica::CloseBatch()
 
     lastPrepare = p;
     if(!isDelegated) {
-        Warning("send prepares");
-        if (!(transport->SendMessageToAll(this, p))) {
+        // Warning("send prepares");
+        if (!(SendMessageToAllReplicas(p))) {
             RWarning("Failed to send prepare message to all replicas");
         }else{
             // RWarning("reset heartbeattimeout in closebatch");
@@ -723,7 +723,8 @@ VRReplica::HandleRequest(const TransportAddress &remote,
         }
     }
 
-
+    //request will be added to log upon receival of witnessDecision when delegated
+    //also wait for witness to add it to client table when delegated to avoid misclassifying the request as a duplicate
     if(!isDelegated){
         // Update the client table
         UpdateClientTable(msg.req());
@@ -750,7 +751,7 @@ VRReplica::HandleRequest(const TransportAddress &remote,
             transport->SendMessage(this, remote, reply);
             Latency_EndType(&requestLatency, 'f');
         } else {
-            //request will be added to log upon receival of witnessDecision when delegated
+            
                 Request request;
                 request.set_op(res);
                 request.set_clientid(msg.req().clientid());
@@ -808,7 +809,7 @@ void
 VRReplica::HandlePrepare(const TransportAddress &remote,
                          const PrepareMessage &msg)
 {
-    Warning("handle prepares");
+    // Warning("handle prepares");
     if (msg.view() == this->view && this->status == STATUS_VIEW_CHANGE) {
 		if (AmLeader()) {
 			RPanic("Unexpected PREPARE: I'm the leader of this view");
@@ -904,7 +905,7 @@ VRReplica::HandlePrepareOK(const TransportAddress &remote,
                            const PrepareOKMessage &msg)
 {
 
-    Warning("handle prepare ok");
+    // Warning("handle prepare ok");
 
     RDebug("Received PREPAREOK <" FMT_VIEW ", "
            FMT_OPNUM  "> from replica %d",
@@ -1040,9 +1041,9 @@ VRReplica::HandleRequestStateTransfer(const TransportAddress &remote,
         return;
     }
 
-    RNotice("Sending state transfer from " FMT_VIEWSTAMP " to "
-            FMT_VIEWSTAMP,
-            msg.view(), msg.opnum(), view, lastCommitted);
+    // RNotice("Sending state transfer from " FMT_VIEWSTAMP " to "
+    //         FMT_VIEWSTAMP,
+    //         msg.view(), msg.opnum(), view, lastCommitted);
 
     StateTransferMessage reply;
     reply.set_view(view);
