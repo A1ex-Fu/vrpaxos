@@ -93,7 +93,7 @@ protected:
     void HandlePaxosAck(const TransportAddress &remote,
                               const proto::PaxosAck &msg);
     void UnloggedRequestTimeoutCallback();
-    
+    bool SendMessageToAllReplicas(const ::google::protobuf::Message &m);
 };
 
 } // namespace specpaxos::vr

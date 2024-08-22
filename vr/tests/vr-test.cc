@@ -86,12 +86,24 @@ protected:
     int requestNum;
     
     virtual void SetUp() {
+        bool testingFiveNode = true;
+        std::string folder = std::string("traces/");
         std::vector<ReplicaAddress> replicaAddrs =
             { { "localhost", "12345" },
               { "localhost", "12346" },
               { "localhost", "12347" }};
         config = new Configuration(3, 1, replicaAddrs);
 
+        if(testingFiveNode){
+            std::vector<ReplicaAddress> replicaAddrs =
+                { { "localhost", "12345" },
+                { "localhost", "12346" },
+                { "localhost", "12347" },
+                { "localhost", "12348" },
+                { "localhost", "12349" }};
+            config = new Configuration(5, 2, replicaAddrs);
+            folder = std::string("traces_5Node/");
+        }
         transport = new SimulatedTransport();
         
         for (int i = 0; i < config->n; i++) {
@@ -102,7 +114,7 @@ protected:
                 auto witness = new VRWitness(*config, i, true, transport, apps[i]);
                 std::string formatted = ::testing::UnitTest::GetInstance()->current_test_info()->name() + std::string(".txt");
                 std::replace(formatted.begin(), formatted.end(), '/', '_');
-                formatted = std::string("traces/") + formatted;
+                formatted = folder + formatted;
             
                 witness->UpdateTraceFile(formatted);
                 replicas.push_back(witness);

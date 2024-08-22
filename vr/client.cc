@@ -134,9 +134,41 @@ VRClient::SendRequest()
     
     // Warning("sending message %s to all", reqMsg.reqstr().c_str());
     // XXX Try sending only to (what we think is) the leader first
-    transport->SendMessageToAll(this, reqMsg);
+    // transport->SendMessageToAll(this, reqMsg);
+
+    SendMessageToAllReplicas(reqMsg);
+    // first witness always has address 1 in the current address indexing scheme
+    transport->SendMessageToReplica(this, 1, reqMsg);
+
     requestTimeout->Reset();
 }
+
+
+/**
+ * @brief send message @p msg to only the replica nodes in the system, not the witness nodes
+ * 
+ * @param msg - message to be sent
+ * @return true - if send was successful
+ * @return false - if any sends failed
+ */
+bool VRClient::SendMessageToAllReplicas(const ::google::protobuf::Message &msg) {
+    //replicas are odd numbered (but zero-index so start at 0)
+    for(int i=0; i<config.n; i+=2){
+        if(IsWitness(i)){
+            Panic(" designed as witness ");
+        }
+
+        if (!(transport->SendMessageToReplica(this,
+                                            i,
+                                            msg))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+
+
 
 void
 VRClient::ResendRequest()

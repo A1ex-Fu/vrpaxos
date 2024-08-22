@@ -1,0 +1,78 @@
+Witness 3 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 3 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 0
+
+
+Witness 3 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 3 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 0
+
+
+Witness 3 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 3 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 0
+
+
+Witness 3 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 3 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 0
+
+
+Witness 3 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 3 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 0
+
+
+Witness 3 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 3 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 0
+
+

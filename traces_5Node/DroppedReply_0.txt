@@ -1,0 +1,194 @@
+Witness 1 received RequestMessage from Client 5
+    RequestMessage:
+        req {
+          op: "test: 0"
+          clientid: 11654256253685702920
+          clientreqid: 1
+        }
+
+
+Witness 1 sent ChainMessage to {Witness 3}
+    ChainMessage:
+        view: 0
+        opnum: 1
+        replicaIdx: 1
+        req {
+          op: "test: 0"
+          clientid: 11654256253685702920
+          clientreqid: 1
+        }
+
+
+Witness 3 received ChainMessage from Witness 1
+    ChainMessage:
+        view: 0
+        opnum: 1
+        replicaIdx: 1
+        req {
+          op: "test: 0"
+          clientid: 11654256253685702920
+          clientreqid: 1
+        }
+
+
+Witness 3 sent WitnessDecision to {Replica 0, Replica 2, Replica 4}
+    WitnessDecision:
+        view: 0
+        opnum: 1
+        replicaIdx: 3
+        req {
+          op: "test: 0"
+          clientid: 11654256253685702920
+          clientreqid: 1
+        }
+
+
+Witness 1 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 1 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 1
+
+
+Witness 3 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 3 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 1
+
+
+Witness 1 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 1 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 1
+
+
+Witness 3 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 3 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 1
+
+
+Witness 1 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 1 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 1
+
+
+Witness 3 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 3 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 1
+
+
+Witness 1 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 1 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 1
+
+
+Witness 3 received Heartbeat from Replica 0
+    Heartbeat:
+        view: 0
+        slotExecuted: 0
+        cleanUpTo: 0
+
+
+Witness 3 sent HeartbeatReply to {Replica 0}
+    HeartbeatReply:
+        view: 0
+        slotOut: 1
+
+
+Witness 1 received RequestMessage from Client 5
+    RequestMessage:
+        req {
+          op: "test: 0"
+          clientid: 11654256253685702920
+          clientreqid: 1
+        }
+
+
+Witness 1 sent ChainMessage to {Witness 3}
+    ChainMessage:
+        view: 0
+        opnum: 1
+        replicaIdx: 1
+        req {
+          op: "test: 0"
+          clientid: 11654256253685702920
+          clientreqid: 1
+        }
+
+
+Witness 3 received ChainMessage from Witness 1
+    ChainMessage:
+        view: 0
+        opnum: 1
+        replicaIdx: 1
+        req {
+          op: "test: 0"
+          clientid: 11654256253685702920
+          clientreqid: 1
+        }
+
+
+Witness 3 sent WitnessDecision to {Replica 0, Replica 2, Replica 4}
+    WitnessDecision:
+        view: 0
+        opnum: 1
+        replicaIdx: 3
+        req {
+          op: "test: 0"
+          clientid: 11654256253685702920
+          clientreqid: 1
+        }
+
+

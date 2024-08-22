@@ -92,11 +92,16 @@ VRWitness::VRWitness(Configuration config, int myIdx,
     //Flag to turn off trace printing so the tests can be run in a reasonable amount of time
     this->printingTraces = true;
 
-    traceFile.open(filename);
+    traceFile.open(filename, std::ios::out);
     if (!traceFile.is_open()) {
         std::cerr << "Failed to open file: " << filename << std::endl;
         Panic("Failed to open file %s", filename.c_str());
+    }else{
+        traceFile << "temp str to clear";
+        traceFile.close();
     }
+
+
 }
 
 VRWitness::~VRWitness()
@@ -287,7 +292,7 @@ VRWitness::HandleRequest(const TransportAddress &remote,
                             
             } else {
                 //not the last witness
-                Warning("CHAINING");
+                // Warning("CHAINING");
                 //send chainmessage to next witness - every other node is a witness
                 ChainMessage reply;
                 reply.set_view(view);
@@ -295,6 +300,7 @@ VRWitness::HandleRequest(const TransportAddress &remote,
                 reply.set_replicaidx(myIdx);
                 *reply.mutable_req() = msg.req();
 
+                // Warning("sending to %d when config.n is %d", (myIdx+2), configuration.n);
                 SendAndWrite(reply, (myIdx+2));
             }
 
@@ -448,7 +454,7 @@ VRWitness::HandleChainMessage(const TransportAddress &remote,
         }
 
         //chaining or not
-        if(myIdx == (configuration.n/2)){
+        if(myIdx == (configuration.n-2)){
             //last witness
             //send witnessDecision to all replicas
             WitnessDecision reply;
@@ -599,7 +605,19 @@ void VRWitness::UpdateTraceFile(std::string filename){
     if (traceFile.is_open()) {
         traceFile.close();
     }
-    traceFile.open(filename);
+
+    traceFile.open(filename, std::ios::out);
+    if (!traceFile.is_open()) {
+        std::cerr << "Failed to open file: " << filename << std::endl;
+        Panic("Failed to open file %s", filename.c_str());
+    }else{
+        //push string to clear file (i think its necessary but idk - no impact anyways)
+        traceFile << "";
+        traceFile.close();
+    }
+
+
+    traceFile.open(filename, std::ios::out | std::ios::app);
     if (!traceFile.is_open()) {
         std::cerr << "Failed to open file: " << filename << std::endl;
         Panic("Failed to open file %s", filename.c_str());
