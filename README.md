@@ -1,3 +1,46 @@
+# Implementation of the Fast Hardware-Assisted Distributed Consensus Project
+The code for this specific project is located in the vr/ directory.
+
+
+_____________________
+## Debugging tips:
+
+  gdb --> "make gdb-test"
+    
+  valgrind --> "valgrind-test"
+    
+  gdb for only the testcases specified in vr-test.cc --> "make gdb-vr-test"
+    
+  valgrind for only the testcases specified in vr-test.cc --> "valgrind-vr-test"
+    
+    
+  run tests --> "make check"
+    
+  -  set flag "printingTraces" in witness.cc to print traces
+    
+  -  set flag "testingFiveNode" in vr-test.cc to run tests with a system of 5 nodes instead of the default 3
+          
+    
+    
+    
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+__________________________________________________________________________
+ORIGINAL README FOR THE SPECPAXOS REPO THAT WE APPROPRIATED IS BELOW
+
+
 # Speculative Paxos
 
 This is an implementation of the Speculative Paxos protocol, as
