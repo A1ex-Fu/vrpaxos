@@ -15,9 +15,9 @@ valgrind for only the testcases specified in vr-test.cc --> "valgrind-vr-test"
 
 run tests --> "make check"
 
-     set flag "printingTraces" in witness.cc to print traces
+  -  set flag "printingTraces" in witness.cc to print traces
 
-     set flag "testingFiveNode" in vr-test.cc to run tests with a system of 5 nodes instead of the default 3
+  -  set flag "testingFiveNode" in vr-test.cc to run tests with a system of 5 nodes instead of the default 3
       
 
 
