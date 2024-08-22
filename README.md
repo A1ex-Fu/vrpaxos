@@ -4,21 +4,21 @@ The code for this specific project is located in the vr/ directory.
 
 _____________________
 Debugging tips:
-gdb --> "make gdb-test"
-
-valgrind --> "valgrind-test"
-
-gdb for only the testcases specified in vr-test.cc --> "make gdb-vr-test"
-
-valgrind for only the testcases specified in vr-test.cc --> "valgrind-vr-test"
-
-
-run tests --> "make check"
-
-  -  set flag "printingTraces" in witness.cc to print traces
-
-  -  set flag "testingFiveNode" in vr-test.cc to run tests with a system of 5 nodes instead of the default 3
-      
+    gdb --> "make gdb-test"
+    
+    valgrind --> "valgrind-test"
+    
+    gdb for only the testcases specified in vr-test.cc --> "make gdb-vr-test"
+    
+    valgrind for only the testcases specified in vr-test.cc --> "valgrind-vr-test"
+    
+    
+    run tests --> "make check"
+    
+      -  set flag "printingTraces" in witness.cc to print traces
+    
+      -  set flag "testingFiveNode" in vr-test.cc to run tests with a system of 5 nodes instead of the default 3
+          
 
 
 
