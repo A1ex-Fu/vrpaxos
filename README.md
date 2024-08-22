@@ -1,4 +1,4 @@
-# Implementation of the Fast Hardware-Assisted Distributed Consensus Project.
+# Implementation of the Fast Hardware-Assisted Distributed Consensus Project
 The code for this specific project is located in the vr/ directory.
 
 
