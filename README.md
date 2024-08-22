@@ -3,7 +3,8 @@ The code for this specific project is located in the vr/ directory.
 
 
 _____________________
-Debugging tips:
+##Debugging tips:
+
   gdb --> "make gdb-test"
     
   valgrind --> "valgrind-test"
