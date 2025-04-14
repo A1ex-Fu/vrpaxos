@@ -37,11 +37,12 @@
 #include "common/replica.h"
 #include "common/quorumset.h"
 #include "vr/vr-proto.pb.h"
+#include "lib/simtransport.h"
+
 
 #include <map>
 #include <memory>
 #include <list>
-#include "lib/transport.h"
 
 namespace specpaxos {
 namespace vr {
@@ -78,6 +79,7 @@ private:
     opnum_t cleanUpTo;
 	std::vector<opnum_t> lastCommitteds; 
 
+    int viewEpoch; //note that the view in this implementation functions more similarly to a ballot
 
     Log log;
     std::map<uint64_t, std::unique_ptr<TransportAddress> > clientAddresses;
@@ -155,6 +157,8 @@ private:
     void HandleHeartbeatReply(const TransportAddress &remote,
                         const proto::HeartbeatReply &msg);
     bool SendMessageToAllReplicas(const ::google::protobuf::Message &m);
+    bool SendMessageToAll(const ::google::protobuf::Message &m);
+    
 };
 
 } // namespace specpaxos::vr

@@ -35,6 +35,8 @@
 #include "common/client.h"
 #include "lib/configuration.h"
 #include "vr/vr-proto.pb.h"
+#include "lib/simtransport.h"
+
 
 namespace specpaxos {
 namespace vr {

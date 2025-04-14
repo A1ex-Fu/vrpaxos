@@ -65,6 +65,7 @@ message StartViewChangeMessage {
     required uint64 view = 1;
     required uint32 replicaIdx = 2;
     required uint64 lastCommitted = 3;
+    required uint64 viewEpoch = 4;
 }
 
 message DoViewChangeMessage {
@@ -81,6 +82,7 @@ message DoViewChangeMessage {
     required uint64 lastCommitted = 4;
     repeated LogEntry entries = 5;
     required uint32 replicaIdx = 6;
+    required uint64 viewEpoch = 7;
 }
 
 message StartViewMessage {
@@ -95,6 +97,7 @@ message StartViewMessage {
     required uint64 lastOp = 2;
     required uint64 lastCommitted = 3;
     repeated LogEntry entries = 4;
+    required uint64 viewEpoch = 5;
 }
 
 message RecoveryMessage {

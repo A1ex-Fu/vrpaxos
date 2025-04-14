@@ -570,7 +570,7 @@ FastPaxosReplica::HandlePrepareOK(const TransportAddress &remote,
 
     viewstamp_t vs = { msg.view(), msg.opnum() };
     if (auto msgs =
-        (quorum.AddAndCheckForQuorum(vs, msg.replicaidx(), msg))) {
+        (quorum.AddAndCheckForQuorum(vs, msg.replicaidx(), msg, false))) {
         RDebug("Received quorum of PREPAREOK messages");
         /*
          * We have a quorum of PrepareOK messages for this

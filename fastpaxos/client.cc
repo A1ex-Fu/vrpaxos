@@ -204,7 +204,7 @@ FastPaxosClient::UnloggedRequestTimeoutCallback()
     PendingRequest *req = pendingUnloggedRequest;
     pendingUnloggedRequest = NULL;
 
-    Warning("Unlogged request timed out");
+    // Warning("Unlogged request timed out");
 
     unloggedRequestTimeout->Stop();
     

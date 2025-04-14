@@ -35,6 +35,7 @@
 #include "lib/transport.h"
 #include "spec/client.h"
 #include "spec/spec-proto.pb.h"
+#include "vr/witness.h"
 
 namespace specpaxos {
 namespace spec {
@@ -211,7 +212,8 @@ SpecClient::HandleReply(const TransportAddress &remote,
     if (auto msgs =
         speculativeReplyQuorum.AddAndCheckForQuorum(msg.clientreqid(),
                                                     msg.replicaidx(),
-                                                    msg)) {
+                                                    msg,
+                                                    false)) {
         /*
          * We now have a quorum of at least n-e responses. Do they
          * match?
@@ -273,7 +275,7 @@ SpecClient::UnloggedRequestTimeoutCallback()
     PendingRequest *req = pendingUnloggedRequest;
     pendingUnloggedRequest = NULL;
 
-    Warning("Unlogged request timed out");
+    // Warning("Unlogged request timed out");
 
     unloggedRequestTimeout->Stop();
     

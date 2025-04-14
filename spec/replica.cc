@@ -114,13 +114,13 @@ SpecReplica::SpecReplica(Configuration config, int myIdx,
     this->failedSyncTimeout = new Timeout(transport,
                                           VIEW_CHANGE_TIMEOUT_MS,
                                           [&]() {
-            Warning("Failed to get a quorum of SYNCREPLYs");
+            // Warning("Failed to get a quorum of SYNCREPLYs");
             StartViewChange(view+1);
         });
     this->viewChangeTimeout = new Timeout(transport,
                                           VIEW_CHANGE_TIMEOUT_MS,
                                           [this]() {
-            Notice("Starting view change; haven't received SYNC");
+            // Notice("Starting view change; haven't received SYNC");
             StartViewChange(view+1);
         });
 
@@ -151,7 +151,7 @@ SpecReplica::AmLeader() const
 void
 SpecReplica::CommitUpTo(opnum_t upto)
 {
-    RNotice("Committing up to " FMT_OPNUM, upto);
+    // RNotice("Committing up to " FMT_OPNUM, upto);
 
     while (lastCommitted < upto) {
         lastCommitted++;
@@ -175,8 +175,8 @@ SpecReplica::RollbackTo(opnum_t backto)
     
     ASSERT(backto >= lastCommitted);
     
-    RNotice("Rolling back from " FMT_OPNUM " to " FMT_OPNUM,
-           lastSpeculative, backto);
+    // RNotice("Rolling back from " FMT_OPNUM " to " FMT_OPNUM,
+        //    lastSpeculative, backto);
 
     for (opnum_t i = lastSpeculative; i > backto; i--) {
         // Roll back the client table
@@ -306,14 +306,14 @@ SpecReplica::HandleRequest(const TransportAddress &remote,
     if (kv != clientTable.end()) {
         const ClientTableEntry &entry = kv->second;
         if (msg.req().clientreqid() < entry.lastReqId) {
-            RNotice("Ignoring stale request");
+            // RNotice("Ignoring stale request");
             Latency_EndType(&requestLatency, 's');
             return;
         }
         if (msg.req().clientreqid() == entry.lastReqId) {
             // This is a duplicate request. Resend the reply.
-            RNotice("Received duplicate request from client " FMT_CLIENTID "; resending reply",
-                    msg.req().clientid());
+            // RNotice("Received duplicate request from client " FMT_CLIENTID "; resending reply",
+            //         msg.req().clientid());
             const LogEntry *le = log.Find(entry.lastReqOpnum);
             ASSERT(le != NULL);
             SpeculativeReplyMessage *reply =
@@ -427,7 +427,7 @@ SpecReplica::SendSync()
         // we're still alive.
     }
 
-    RNotice("Starting synchronization for " FMT_OPNUM, lastSpeculative);
+    // RNotice("Starting synchronization for " FMT_OPNUM, lastSpeculative);
     
     SyncMessage msg;
     msg.set_view(view);
@@ -461,7 +461,7 @@ SpecReplica::HandleSync(const TransportAddress &remote,
 
     if (msg.view() > this->view) {
         // XXX State transfer?
-        RNotice("Received sync for future view " FMT_VIEW, msg.view());
+        // RNotice("Received sync for future view " FMT_VIEW, msg.view());
         StartViewChange(msg.view()+1);
         return;
     }
@@ -475,7 +475,7 @@ SpecReplica::HandleSync(const TransportAddress &remote,
     // Commit operations we now know to be committed... if we're
     // consistent
     if (msg.lastcommitted() > lastSpeculative) {
-        RWarning("Sync for committed opnum that hasn't been received yet");
+        // RWarning("Sync for committed opnum that hasn't been received yet");
         // XXX State transfer?
         StartViewChange(view+1);
         return;
@@ -489,7 +489,7 @@ SpecReplica::HandleSync(const TransportAddress &remote,
             CommitUpTo(msg.lastcommitted());
         } else {
             // XXX State transfer instead?
-            RNotice("Sync for different hash");
+            // RNotice("Sync for different hash");
             StartViewChange(view+1);
             return;
         }
@@ -498,7 +498,7 @@ SpecReplica::HandleSync(const TransportAddress &remote,
     if (msg.lastspeculative() > lastSpeculative) {
         // Record the opnum; we'll send a sync once we receive the
         // corresponding request
-        RWarning("Sync for opnum that hasn't been received yet");
+        // RWarning("Sync for opnum that hasn't been received yet");
         pendingSync = msg.lastspeculative();
         return;
     }
@@ -523,11 +523,11 @@ SpecReplica::SendSyncReply(opnum_t opnum)
         reply.set_lastspeculativehash(entry->hash);        
     }
 
-    if (!(transport->SendMessageToReplica(this,
-                                          configuration.GetLeaderIndex(view),
-                                          reply))) {
-        RWarning("Failed to send SYNCREPLY");
-    }
+    // if (!(transport->SendMessageToReplica(this,
+    //                                       configuration.GetLeaderIndex(view),
+    //                                       reply))) {
+    //     RWarning("Failed to send SYNCREPLY");
+    // }
 }
 
 void
@@ -562,7 +562,7 @@ SpecReplica::HandleSyncReply(const TransportAddress &remote,
     if (auto msgs =
         syncReplyQuorum.AddAndCheckForQuorum(msg.lastspeculative(),
                                              msg.replicaidx(),
-                                             msg)) {
+                                             msg, false)) {
         failedSyncTimeout->Reset();
 
         // If we've already committed everything the other replicas
@@ -610,7 +610,7 @@ SpecReplica::HandleSyncReply(const TransportAddress &remote,
         } else {
             // XXX Should we wait to see if another matching request
             // could make this a matching quorum?
-            RNotice("SYNC found quorum of non-matching responses");
+            // RNotice("SYNC found quorum of non-matching responses");
             StartViewChange(view+1);
         }
     }
@@ -624,7 +624,7 @@ SpecReplica::EnterView(view_t newview)
 {
     bool wasNormal = (status == STATUS_NORMAL);
     
-    RNotice("Entering new view " FMT_VIEW, newview);
+    // RNotice("Entering new view " FMT_VIEW, newview);
     view = newview;
     status = STATUS_NORMAL;
 
@@ -656,7 +656,7 @@ SpecReplica::EnterView(view_t newview)
             delete msgpair.first;
         }        
     }
-    RNotice("Entered view " FMT_VIEW, newview);
+    // RNotice("Entered view " FMT_VIEW, newview);
 
     if (newview != 0 && !wasNormal) {
         Latency_End(&reconciliationLatency);
@@ -666,7 +666,7 @@ SpecReplica::EnterView(view_t newview)
 void
 SpecReplica::StartViewChange(view_t newview)
 {
-    RNotice("Starting view change for view " FMT_VIEW, newview);
+    // RNotice("Starting view change for view " FMT_VIEW, newview);
 
     if (status == STATUS_VIEW_CHANGE) {
         Latency_EndType(&reconciliationLatency, 'f');
@@ -714,8 +714,8 @@ void
 SpecReplica::HandleStartViewChange(const TransportAddress &remote,
                                    const StartViewChangeMessage &msg)
 {
-    RNotice("Received STARTVIEWCHANGE " FMT_VIEW " from replica %d",
-           msg.view(), msg.replicaidx());
+    // RNotice("Received STARTVIEWCHANGE " FMT_VIEW " from replica %d",
+    //        msg.view(), msg.replicaidx());
 
     if (msg.view() < view) {
         RDebug("Ignoring STARTVIEWCHANGE for older view");
@@ -736,7 +736,7 @@ SpecReplica::HandleStartViewChange(const TransportAddress &remote,
     if (auto msgs =
         startViewChangeQuorum.AddAndCheckForQuorum(msg.view(),
                                                    msg.replicaidx(),
-                                                   msg)) {
+                                                   msg, false)) {
         if (sentDoViewChange == msg.view()) {
             return;
         }
@@ -749,8 +749,8 @@ SpecReplica::HandleStartViewChange(const TransportAddress &remote,
         sentDoViewChange = msg.view();
     
 
-        RNotice("Have quorum of StartViewChange messages; "
-                "sending DoViewChange to replica %d", leader);
+        // RNotice("Have quorum of StartViewChange messages; "
+        //         "sending DoViewChange to replica %d", leader);
 
         DoViewChangeMessage dvc;
         dvc.set_view(view);
@@ -795,7 +795,7 @@ SpecReplica::HandleStartViewChange(const TransportAddress &remote,
             }            
         } else {
             doViewChangeQuorum.AddAndCheckForQuorum(msg.view(), myIdx,
-                                                    dvc);
+                                                    dvc, false);
         }
     }
 }
@@ -817,7 +817,7 @@ SpecReplica::MergeLogs(view_t newView, opnum_t maxStart,
     ASSERT(dvcs.size() >= (unsigned int)configuration.QuorumSize());
     ASSERT(maxStart <= lastSpeculative);
 
-    RNotice("Merging %lu logs", dvcs.size());
+    // RNotice("Merging %lu logs", dvcs.size());
     for (auto &kv : dvcs) {
         const DoViewChangeMessage &dvc = kv.second;
         RDebug("Log from replica %d:", dvc.replicaidx());
@@ -1115,7 +1115,7 @@ SpecReplica::MergeLogs(view_t newView, opnum_t maxStart,
                VA_BLOB_STRING(entry.hash));
     }
     RDebug(" ");
-    RNotice("Produced merged log with %zd entries", out.size());
+    // RNotice("Produced merged log with %zd entries", out.size());
 }
 
 void
@@ -1333,7 +1333,7 @@ SpecReplica::NeedFillDVCGap(view_t view)
     }
 
     doViewChangeQuorum.Clear();
-    doViewChangeQuorum.AddAndCheckForQuorum(view, myIdx, mine);
+    doViewChangeQuorum.AddAndCheckForQuorum(view, myIdx, mine, false);
     
     needFillDVC = view;
 }
@@ -1342,7 +1342,7 @@ void
 SpecReplica::HandleDoViewChange(const TransportAddress &remote,
                                 const DoViewChangeMessage &msg)
 {
-    RNotice("Received DOVIEWCHANGE " FMT_VIEW " from replica %d", msg.view(), msg.replicaidx());
+    // RNotice("Received DOVIEWCHANGE " FMT_VIEW " from replica %d", msg.view(), msg.replicaidx());
 
     if (msg.view() < view) {
         RDebug("Ignoring DOVIEWCHANGE for older view");
@@ -1375,10 +1375,10 @@ SpecReplica::HandleDoViewChange(const TransportAddress &remote,
             }
         }
         doViewChangeQuorum.AddAndCheckForQuorum(msg.view(),
-                                                msg.replicaidx(), msg);
+                                                msg.replicaidx(), msg, false);
     } else {
         doViewChangeQuorum.AddAndCheckForQuorum(msg.view(),
-                                                msg.replicaidx(), msg);
+                                                msg.replicaidx(), msg, false);
 
         auto &dvcs = doViewChangeQuorum.GetMessages(msg.view());
         if (dvcs.size() > 0) {
@@ -1570,7 +1570,7 @@ SpecReplica::HandleStartView(const TransportAddress &remote,
 
     // Start new view
     EnterView(msg.view());
-    ASSERT(!AmLeader());
+    // ASSERT(!AmLeader());
 }
 
 
@@ -1592,13 +1592,13 @@ SpecReplica::HandleInView(const TransportAddress &remote,
     ASSERT(configuration.GetLeaderIndex(msg.view()) == myIdx);
 
     if (inViewQuorum.AddAndCheckForQuorum(msg.view(), msg.replicaidx(),
-                                          msg) != NULL) {
+                                          msg, false) != NULL) {
         ASSERT(msg.lastspeculative() <= lastSpeculative);
         if (msg.lastspeculative() < lastCommitted) {
             return;
         }
-        RNotice("Have quorum of INVIEW messages; committing up to " FMT_OPNUM,
-                msg.lastspeculative());
+        // RNotice("Have quorum of INVIEW messages; committing up to " FMT_OPNUM,
+        //         msg.lastspeculative());
         CommitUpTo(msg.lastspeculative());
         SendSync();
     }
@@ -1608,10 +1608,10 @@ void
 SpecReplica::HandleFillLogGap(const TransportAddress &remote,
                               const FillLogGapMessage &msg) 
 {
-    RNotice("Received FILLLOGGAP " FMT_VIEW, msg.view());
+    // RNotice("Received FILLLOGGAP " FMT_VIEW, msg.view());
 
     if (msg.view() != view) {
-        RNotice("Ignoring FillLogGap message; wrong view");
+        // RNotice("Ignoring FillLogGap message; wrong view");
         return;
     }
 
@@ -1632,10 +1632,10 @@ void
 SpecReplica::HandleFillDVCGap(const TransportAddress &remote,
                               const FillDVCGapMessage &msg) 
 {
-    RNotice("Received FILLDVCGAP " FMT_VIEW, msg.view());
+    // RNotice("Received FILLDVCGAP " FMT_VIEW, msg.view());
 
     if (msg.view() != view) {
-        RNotice("Ignoring FillDVCGap message; wrong view");
+        // RNotice("Ignoring FillDVCGap message; wrong view");
         return;
     }
 

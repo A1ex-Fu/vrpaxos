@@ -383,7 +383,7 @@ Configuration::Configuration(std::ifstream &file)
             char *strtolPtr;
             f = strtoul(arg, &strtolPtr, 0);
             if ((*arg == '\0') || (*strtolPtr != '\0')) {
-                Panic("Invalid argument to 'f' configuration line");
+                Panic("Invalid argument to 'f' configuration line: %s", arg);
             }
         } else if (strcasecmp(cmd, "replica") == 0) {
             char *arg = strtok(NULL, " \t");

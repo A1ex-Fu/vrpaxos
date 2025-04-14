@@ -32,6 +32,9 @@
 #ifndef _COMMON_QUORUMSET_H_
 #define _COMMON_QUORUMSET_H_
 
+#include "common/replica.h"
+
+
 namespace specpaxos {
     
 template <class IDTYPE, class MSGTYPE>

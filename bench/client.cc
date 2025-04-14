@@ -35,9 +35,9 @@
 #include "bench/benchmark.h"
 #include "common/client.h"
 #include "lib/configuration.h"
-#include "fastpaxos/client.h"
-#include "spec/client.h"
-#include "unreplicated/client.h"
+// #include "fastpaxos/client.h"
+// #include "spec/client.h"
+// #include "unreplicated/client.h"
 #include "vr/client.h"
 
 #include <unistd.h>
@@ -119,13 +119,16 @@ int main(int argc, char **argv)
             
         case 'm':
             if (strcasecmp(optarg, "unreplicated") == 0) {
-                proto = PROTO_UNREPLICATED;
+                // proto = PROTO_UNREPLICATED;
+                throw new std::invalid_argument("invalid benchmark type");
             } else if (strcasecmp(optarg, "vr") == 0) {
                 proto = PROTO_VR;
             } else if (strcasecmp(optarg, "fastpaxos") == 0) {
-                proto = PROTO_FASTPAXOS;
+                // proto = PROTO_FASTPAXOS;
+                throw new std::invalid_argument("invalid benchmark type");
             } else if (strcasecmp(optarg, "spec") == 0) {
-                proto = PROTO_SPEC;
+                // proto = PROTO_SPEC;
+                throw new std::invalid_argument("invalid benchmark type");
             } else {
                 fprintf(stderr, "unknown mode '%s'\n", optarg);
                 Usage(argv[0]);
@@ -208,9 +211,10 @@ int main(int argc, char **argv)
         specpaxos::Client *client;
         switch (proto) {
         case PROTO_UNREPLICATED:
-            client =
-                new specpaxos::unreplicated::UnreplicatedClient(config,
-                                                                &transport);
+            // client =
+            //     new specpaxos::unreplicated::UnreplicatedClient(config,
+            //                                                     &transport);
+            throw new std::invalid_argument("invalid benchmark client type");
             break;
         
         case PROTO_VR:
@@ -218,12 +222,14 @@ int main(int argc, char **argv)
             break;
 
         case PROTO_FASTPAXOS:
-            client = new specpaxos::fastpaxos::FastPaxosClient(config,
-                                                               &transport);
+            // client = new specpaxos::fastpaxos::FastPaxosClient(config,
+            //                                                    &transport);
+            throw new std::invalid_argument("invalid benchmark client type");
             break;
 
         case PROTO_SPEC:
-            client = new specpaxos::spec::SpecClient(config, &transport);
+            // client = new specpaxos::spec::SpecClient(config, &transport);
+            throw new std::invalid_argument("invalid benchmark client type");
             break;
         
         default:

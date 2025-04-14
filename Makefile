@@ -7,7 +7,9 @@ CXX = g++
 LD = g++
 
 CFLAGS := -g -Wall -pthread -iquote.obj/gen -Wno-uninitialized
-CXXFLAGS := -std=c++0x
+# CXXFLAGS := -std=c++0x
+CXXFLAGS = -std=c++14
+
 LDFLAGS := -levent_pthreads -ldl
 ## Debian package: check
 # CHECK_CFLAGS := $(shell pkg-config --cflags check)
@@ -130,10 +132,10 @@ endef
 
 include lib/Rules.mk
 include common/Rules.mk
-# include unreplicated/Rules.mk
+include unreplicated/Rules.mk
 include vr/Rules.mk
-# include fastpaxos/Rules.mk
-# include spec/Rules.mk
+include fastpaxos/Rules.mk
+include spec/Rules.mk
 include bench/Rules.mk
 include nistore/Rules.mk
 include timeserver/Rules.mk
@@ -287,3 +289,25 @@ valgrind-vr-test: ./vr/tests/vr-test
 	valgrind --leak-check=full --track-origins=yes ./vr/tests/vr-test
 
 
+.PHONY: gdb-unreplicated-test
+gdb-unreplicated-test: ./unreplicated/tests/unreplicated-test
+	@echo "Running unreplicated-test with gdb..."
+	@gdb ./unreplicated/tests/unreplicated-test
+
+.PHONY: gdb-spec-test
+gdb-spec-test: ./spec/tests/spec-test
+	@echo "Running spec-test with gdb..."
+	@gdb ./spec/tests/spec-test
+
+
+.PHONY: benchmark
+benchmark: ./bench/client
+	@echo "Running benchmark with gdb..."
+	@gdb ./bench/client
+
+
+
+# .PHONY: gdb-fastpaxos-test
+# gdb-unreplicated-test: ./spec/tests/merge-test
+# 	@echo "Running merge-test with gdb..."
+# 	@gdb ./spec/tests/merge-test

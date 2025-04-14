@@ -15,9 +15,9 @@
 #include "lib/udptransport.h"
 #include "common/client.h"
 #include "lib/configuration.h"
-#include "spec/client.h"
+// #include "spec/client.h"
 #include "vr/client.h"
-#include "fastpaxos/client.h"
+// #include "fastpaxos/client.h"
 #include "nistore/request.pb.h"
 
 #include <iostream>

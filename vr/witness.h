@@ -72,6 +72,8 @@ private:
 
     opnum_t cleanUpTo;
     std::vector<opnum_t> lastCommitteds;
+
+    int viewEpoch;
     
     Log log;
 
@@ -85,6 +87,7 @@ private:
 
     bool printingTraces;
     std::ofstream traceFile;
+
 
 
 

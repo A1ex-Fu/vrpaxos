@@ -28,223 +28,229 @@
  *
  **********************************************************************/
 
-#include "lib/configuration.h"
-#include "common/replica.h"
-#include "lib/udptransport.h"
-#include "fastpaxos/replica.h"
-#include "spec/replica.h"
-#include "unreplicated/replica.h"
-#include "vr/replica.h"
-
-#include <unistd.h>
-#include <stdlib.h>
-#include <vector>
-#include <fstream>
-#include <iostream>
-
-static void
-Usage(const char *progName)
-{
-        fprintf(stderr, "usage: %s -c conf-file [-R] -i replica-index -m unreplicated|vr|fastpaxos|spec [-b batch-size] [-d packet-drop-rate] [-r packet-reorder-rate] [-q dscp]\n",
-                progName);
-        exit(1);
-}
-
-
-int
-main(int argc, char **argv)
-{
-    int index = -1;
-    const char *configPath = NULL;
-    double dropRate = 0.0;
-    double reorderRate = 0.0;
-    int dscp = 0;
-    int batchSize = 1;
-    bool recover;
-    
-    specpaxos::AppReplica *nullApp = new specpaxos::AppReplica();
-
-    enum
-    {
-        PROTO_UNKNOWN,
-        PROTO_UNREPLICATED,
-        PROTO_VR,
-        PROTO_FASTPAXOS,
-        PROTO_SPEC
-    } proto = PROTO_UNKNOWN;
-
-    // Parse arguments
-    int opt;
-    while ((opt = getopt(argc, argv, "b:c:d:i:m:q:r:R")) != -1) {
-        switch (opt) {
-        case 'b':
-        {
-            char *strtolPtr;
-            batchSize = strtoul(optarg, &strtolPtr, 10);
-            if ((*optarg == '\0') || (*strtolPtr != '\0')
-                || (batchSize < 1))
-            {
-                fprintf(stderr,
-                        "option -b requires a numeric arg\n");
-                Usage(argv[0]);
-            }
-            break;
-        }
-
-        case 'c':
-            configPath = optarg;
-            break;
-
-        case 'd':
-        {
-            char *strtodPtr;
-            dropRate = strtod(optarg, &strtodPtr);
-            if ((*optarg == '\0') || (*strtodPtr != '\0') ||
-                ((dropRate < 0) || (dropRate >= 1))) {
-                fprintf(stderr,
-                        "option -d requires a numeric arg between 0 and 1\n");
-                Usage(argv[0]);
-            }
-            break;
-        }
-
-        case 'i':
-        {
-            char *strtolPtr;
-            index = strtoul(optarg, &strtolPtr, 10);
-            if ((*optarg == '\0') || (*strtolPtr != '\0') || (index < 0))
-            {
-                fprintf(stderr,
-                        "option -i requires a numeric arg\n");
-                Usage(argv[0]);
-            }
-            break;
-        }
-
-        case 'm':
-            if (strcasecmp(optarg, "unreplicated") == 0) {
-                proto = PROTO_UNREPLICATED;
-            } else if (strcasecmp(optarg, "vr") == 0) {
-                proto = PROTO_VR;
-            } else if (strcasecmp(optarg, "fastpaxos") == 0) {
-                proto = PROTO_FASTPAXOS;
-            } else if (strcasecmp(optarg, "spec") == 0) {
-                proto = PROTO_SPEC;
-            } else {
-                fprintf(stderr, "unknown mode '%s'\n", optarg);
-                Usage(argv[0]);
-            }
-            break;
-
-        case 'q':
-        {
-            char *strtolPtr;
-            dscp = strtoul(optarg, &strtolPtr, 10);
-            if ((*optarg == '\0') || (*strtolPtr != '\0') ||
-                (dscp < 0))
-            {
-                fprintf(stderr,
-                        "option -q requires a numeric arg\n");
-                Usage(argv[0]);
-            }
-            break;
-        }
-            
-        case 'r':
-        {
-            char *strtodPtr;
-            reorderRate = strtod(optarg, &strtodPtr);
-            if ((*optarg == '\0') || (*strtodPtr != '\0') ||
-                ((reorderRate < 0) || (reorderRate >= 1))) {
-                fprintf(stderr,
-                        "option -r requires a numeric arg between 0 and 1\n");
-                Usage(argv[0]);
-            }
-            break;
-        }
-
-        case 'R':
-            recover = true;
-            break;
-
-        default:
-            fprintf(stderr, "Unknown argument %s\n", argv[optind]);
-            Usage(argv[0]);
-            break;
-        }
-    }
-
-    if (!configPath) {
-        fprintf(stderr, "option -c is required\n");
-        Usage(argv[0]);
-    }
-    if (index == -1) {
-        fprintf(stderr, "option -i is required\n");
-        Usage(argv[0]);
-    }
-    if (proto == PROTO_UNKNOWN) {
-        fprintf(stderr, "option -m is required\n");
-        Usage(argv[0]);
-    }
-    if ((proto != PROTO_VR) && (batchSize != 1)) {
-        Warning("Batching enabled, but has no effect on non-VR protocols");
-    }
-
-    // Load configuration
-    std::ifstream configStream(configPath);
-    if (configStream.fail()) {
-        fprintf(stderr, "unable to read configuration file: %s\n",
-                configPath);
-        Usage(argv[0]);
-    }
-    specpaxos::Configuration config(configStream);
-    
-    if (index >= config.n) {
-        fprintf(stderr, "replica index %d is out of bounds; "
-                "only %d replicas defined\n", index, config.n);
-        Usage(argv[0]);
-    }
-    
-    UDPTransport transport(dropRate, reorderRate, dscp);
-
-    specpaxos::Replica *replica;
-    switch (proto) {
-    case PROTO_UNREPLICATED:
-        replica =
-            new specpaxos::unreplicated::UnreplicatedReplica(config,
-                                                             index,
-                                                             !recover,
-                                                             &transport,
-                                                             nullApp);
-        break;
-        
-    case PROTO_VR:
-        replica = new specpaxos::vr::VRReplica(config, index,
-                                               !recover,
-                                               &transport,
-                                               batchSize,
-                                               nullApp);
-        break;
-
-    case PROTO_FASTPAXOS:
-        replica = new specpaxos::fastpaxos::FastPaxosReplica(config,
-                                                             !recover,
-                                                             index,
-                                                             &transport,
-                                                             nullApp);
-        break;
-        
-    case PROTO_SPEC:
-        replica = new specpaxos::spec::SpecReplica(config, index,
-                                                   !recover,
-                                                   &transport, nullApp);
-        break;
-        
-    default:
-        NOT_REACHABLE();
-    }
-    
-    transport.Run();
-
-    delete replica;
-}
+ #include "lib/configuration.h"
+ #include "common/replica.h"
+ #include "lib/udptransport.h"
+//  #include "fastpaxos/replica.h"
+//  #include "spec/replica.h"
+//  #include "unreplicated/replica.h"
+ #include "vr/replica.h"
+ #include "vr/witness.h"
+ 
+ #include <unistd.h>
+ #include <stdlib.h>
+ #include <vector>
+ #include <fstream>
+ #include <iostream>
+ 
+ static void
+ Usage(const char *progName)
+ {
+     fprintf(stderr, "usage: %s -c conf-file [-R] -i replica-index -m unreplicated|vr|fastpaxos|spec [-w] [-b batch-size] [-d packet-drop-rate] [-r packet-reorder-rate] [-q dscp]\n",
+             progName);
+     fprintf(stderr, "  -w: run as witness (only valid with -m vr)\n");
+     exit(1);
+ }
+ 
+ int
+ main(int argc, char **argv)
+ {
+     int index = -1;
+     const char *configPath = NULL;
+     double dropRate = 0.0;
+     double reorderRate = 0.0;
+     int dscp = 0;
+     int batchSize = 1;
+     bool recover;
+     bool isWitness = false;
+ 
+     specpaxos::AppReplica *nullApp = new specpaxos::AppReplica();
+ 
+     enum
+     {
+         PROTO_UNKNOWN,
+         PROTO_UNREPLICATED,
+         PROTO_VR,
+         PROTO_FASTPAXOS,
+         PROTO_SPEC
+     } proto = PROTO_UNKNOWN;
+ 
+     // Parse arguments
+     int opt;
+     while ((opt = getopt(argc, argv, "b:c:d:i:m:q:r:Rw")) != -1) {
+         switch (opt) {
+         case 'b':
+         {
+             char *strtolPtr;
+             batchSize = strtoul(optarg, &strtolPtr, 10);
+             if ((*optarg == '\0') || (*strtolPtr != '\0') || (batchSize < 1)) {
+                 fprintf(stderr, "option -b requires a numeric arg\n");
+                 Usage(argv[0]);
+             }
+             break;
+         }
+ 
+         case 'c':
+             configPath = optarg;
+             break;
+ 
+         case 'd':
+         {
+             char *strtodPtr;
+             dropRate = strtod(optarg, &strtodPtr);
+             if ((*optarg == '\0') || (*strtodPtr != '\0') || (dropRate < 0 || dropRate >= 1)) {
+                 fprintf(stderr, "option -d requires a numeric arg between 0 and 1\n");
+                 Usage(argv[0]);
+             }
+             break;
+         }
+ 
+         case 'i':
+         {
+             char *strtolPtr;
+             index = strtoul(optarg, &strtolPtr, 10);
+             if ((*optarg == '\0') || (*strtolPtr != '\0') || (index < 0)) {
+                 fprintf(stderr, "option -i requires a numeric arg\n");
+                 Usage(argv[0]);
+             }
+             break;
+         }
+ 
+         case 'm':
+             if (strcasecmp(optarg, "unreplicated") == 0) {
+                 proto = PROTO_UNREPLICATED;
+             } else if (strcasecmp(optarg, "vr") == 0) {
+                 proto = PROTO_VR;
+             } else if (strcasecmp(optarg, "fastpaxos") == 0) {
+                 proto = PROTO_FASTPAXOS;
+             } else if (strcasecmp(optarg, "spec") == 0) {
+                 proto = PROTO_SPEC;
+             } else {
+                 fprintf(stderr, "unknown mode '%s'\n", optarg);
+                 Usage(argv[0]);
+             }
+             break;
+ 
+         case 'q':
+         {
+             char *strtolPtr;
+             dscp = strtoul(optarg, &strtolPtr, 10);
+             if ((*optarg == '\0') || (*strtolPtr != '\0') || (dscp < 0)) {
+                 fprintf(stderr, "option -q requires a numeric arg\n");
+                 Usage(argv[0]);
+             }
+             break;
+         }
+ 
+         case 'r':
+         {
+             char *strtodPtr;
+             reorderRate = strtod(optarg, &strtodPtr);
+             if ((*optarg == '\0') || (*strtodPtr != '\0') || (reorderRate < 0 || reorderRate >= 1)) {
+                 fprintf(stderr, "option -r requires a numeric arg between 0 and 1\n");
+                 Usage(argv[0]);
+             }
+             break;
+         }
+ 
+         case 'R':
+             recover = true;
+             break;
+ 
+         case 'w':
+             isWitness = true;
+             break;
+ 
+         default:
+             fprintf(stderr, "Unknown argument %s\n", argv[optind]);
+             Usage(argv[0]);
+             break;
+         }
+     }
+ 
+     if (!configPath) {
+         fprintf(stderr, "option -c is required\n");
+         Usage(argv[0]);
+     }
+     if (index == -1) {
+         fprintf(stderr, "option -i is required\n");
+         Usage(argv[0]);
+     }
+     if (proto == PROTO_UNKNOWN) {
+         fprintf(stderr, "option -m is required\n");
+         Usage(argv[0]);
+     }
+     if (isWitness && proto != PROTO_VR) {
+         fprintf(stderr, "option -w is only valid with -m vr\n");
+         Usage(argv[0]);
+     }
+     if ((proto != PROTO_VR) && (batchSize != 1)) {
+         Warning("Batching enabled, but has no effect on non-VR protocols");
+     }
+ 
+     // Load configuration
+     std::ifstream configStream(configPath);
+     if (configStream.fail()) {
+         fprintf(stderr, "unable to read configuration file: %s\n", configPath);
+         Usage(argv[0]);
+     }
+     specpaxos::Configuration config(configStream);
+ 
+     if (index >= config.n) {
+         fprintf(stderr, "replica index %d is out of bounds; only %d replicas defined\n",
+                 index, config.n);
+         Usage(argv[0]);
+     }
+ 
+     UDPTransport transport(dropRate, reorderRate, dscp);
+ 
+     specpaxos::Replica *replica;
+     switch (proto) {
+     case PROTO_UNREPLICATED:
+        //  replica =
+        //      new specpaxos::unreplicated::UnreplicatedReplica(config,
+        //                                                       index,
+        //                                                       recover,
+        //                                                       &transport,
+        //                                                       nullApp);
+         break;
+ 
+     case PROTO_VR:
+         if (isWitness) {
+             replica = new specpaxos::vr::VRWitness(config, index,
+                                                    !recover,
+                                                    &transport,
+                                                    nullApp);
+         } else {
+             replica = new specpaxos::vr::VRReplica(config, index,
+                                                    !recover,
+                                                    &transport,
+                                                    batchSize,
+                                                    nullApp);
+         }
+         break;
+ 
+     case PROTO_FASTPAXOS:
+        //  replica = new specpaxos::fastpaxos::FastPaxosReplica(config,
+        //                                                       !recover,
+        //                                                       index,
+        //                                                       &transport,
+        //                                                       nullApp);
+         break;
+ 
+     case PROTO_SPEC:
+        //  replica = new specpaxos::spec::SpecReplica(config, index,
+        //                                             !recover,
+        //                                             &transport,
+        //                                             nullApp);
+         break;
+ 
+     default:
+         NOT_REACHABLE();
+     }
+ 
+     transport.Run();
+ 
+     delete replica;
+ }
+ 

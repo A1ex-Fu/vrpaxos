@@ -72,6 +72,8 @@ VRWitness::VRWitness(Configuration config, int myIdx,
 
 	this->cleanUpTo = 0;
 
+    this->viewEpoch = 0;
+
 
     this->heartbeatCheckTimeout = new Timeout(transport, 5000, [this,myIdx]() {
             // RWarning("Have not heard from leader; witness");
@@ -144,7 +146,8 @@ void
 VRWitness::EnterView(view_t newview)
 {
     RNotice("Entering new view " FMT_VIEW, newview);
-    RPanic("witness enter new view");
+
+    this->viewEpoch++;
 
     view = newview;
     Warning("witness %d has status normal", myIdx);
@@ -234,6 +237,7 @@ VRWitness::StartViewChange(view_t newview)
     m.set_view(newview);
     m.set_replicaidx(myIdx);
     m.set_lastcommitted(lastCommitted);
+    m.set_viewepoch(viewEpoch);
 
     SendAndWrite(m, -2);
 }
@@ -256,8 +260,6 @@ VRWitness::HandleRequest(const TransportAddress &remote,
             //decide on slotNum depending on whether it is a new command or not
             if(slotNum==-1){
                 //new command - get new slotNum, add to log, and increment slotin
-                slotNum = lastOp;
-                this->lastOp++;
                 
                 //auto commit requests for the witness
                 ++this->lastCommitted;
@@ -271,9 +273,13 @@ VRWitness::HandleRequest(const TransportAddress &remote,
                 request.set_clientid(msg.req().clientid());
                 request.set_clientreqid(msg.req().clientreqid());
                 v.view = this->view;
-                v.opnum = slotNum;
+                v.opnum = lastOp;
+                // Notice("Adding lastOp %d", this->lastOp);
+                this->lastOp++;
 
                 /* Add the request to my log */
+                // Notice("view is %d",this->view);
+                
                 log.Append(v, request, LOG_STATE_COMMITTED);
             }
 
@@ -346,6 +352,7 @@ VRWitness::HandleStartViewChange(const TransportAddress &remote,
             dvc.set_lastop(lastOp);
             dvc.set_lastcommitted(lastCommitted);
             dvc.set_replicaidx(myIdx);
+            dvc.set_viewepoch(viewEpoch);
 
             // Figure out how much of the log to include
             opnum_t minCommitted = std::min_element(
@@ -359,8 +366,9 @@ VRWitness::HandleStartViewChange(const TransportAddress &remote,
             
             log.Dump(minCommitted,
                      dvc.mutable_entries());
-
-            SendAndWrite(dvc, leader);
+            
+            
+            SendAndWrite(dvc, leader);  
         }
     }
 }
@@ -387,6 +395,10 @@ VRWitness::HandleStartView(const TransportAddress &remote,
 
     ASSERT(configuration.GetLeaderIndex(msg.view()) != myIdx);
 
+
+    ASSERT(viewEpoch < msg.viewepoch());
+    viewEpoch = msg.viewepoch();
+
     if (msg.entries_size() == 0) {
         ASSERT(msg.lastcommitted() == lastCommitted);
         ASSERT(msg.lastop() == msg.lastcommitted());
@@ -404,7 +416,9 @@ VRWitness::HandleStartView(const TransportAddress &remote,
 
     EnterView(msg.view());
     opnum_t oldLastOp = lastOp;
-    lastOp = msg.lastop();
+
+    Notice("setting lastop %d to have value %d", lastOp, msg.lastop());
+    lastOp = msg.lastop()+1;
 
 
     CommitUpTo(msg.lastcommitted());
@@ -425,7 +439,7 @@ VRWitness::HandleChainMessage(const TransportAddress &remote,
     Assert(msg.view() >= view);
     //check that we go through entire chain
     Assert(msg.replicaidx()+2==myIdx);
- 
+    
     if((status != STATUS_VIEW_CHANGE)) {
         viewstamp_t v;
 

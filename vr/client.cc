@@ -28,15 +28,19 @@
  *
  **********************************************************************/
 
-#include "common/client.h"
-#include "common/request.pb.h"
-#include "lib/assert.h"
-#include "lib/message.h"
-#include "lib/transport.h"
-#include "vr/client.h"
-#include "vr/vr-proto.pb.h"
-#include "lib/simtransport.h"
-#include "common/replica.h"
+ #include "common/client.h"
+ #include "common/request.pb.h"
+ #include "lib/assert.h"
+ #include "lib/message.h"
+ #include "lib/transport.h"
+ #include "vr/client.h"
+ #include "vr/vr-proto.pb.h"
+ #include "lib/simtransport.h"
+
+ 
+#include "vr/witness.h"
+
+
 
 
 namespace specpaxos {
@@ -152,16 +156,12 @@ VRClient::SendRequest()
  * @return false - if any sends failed
  */
 bool VRClient::SendMessageToAllReplicas(const ::google::protobuf::Message &msg) {
-    //replicas are odd numbered (but zero-index so start at 0)
-    for(int i=0; i<config.n; i+=2){
-        if(IsWitness(i)){
-            Panic(" designed as witness ");
-        }
-
-        if (!(transport->SendMessageToReplica(this,
-                                            i,
-                                            msg))) {
-            return false;
+    // Send to all non-witness nodes (even indices)
+    for(int i=0; i<config.n; i++) {
+        if(!IsWitness(i)) {
+            if (!(transport->SendMessageToReplica(this, i, msg))) {
+                return false;
+            }
         }
     }
     return true;
@@ -274,6 +274,7 @@ VRClient::HandlePaxosAck(const TransportAddress &remote,
 {
     Debug("Client received paxosAck");
 
+
     if (pendingRequest==NULL || msg.clientreqid() != pendingRequest->clientReqId) {
         return;
     }
@@ -289,6 +290,8 @@ VRClient::HandlePaxosAck(const TransportAddress &remote,
 
     const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
     int srcAddr = simRemote.GetAddr();
+    
+    // Notice("got ack from %d", srcAddr);
 
     auto it = std::find(replicas.begin(), replicas.end(), srcAddr); 
     if (it != replicas.end()) { 
@@ -318,7 +321,7 @@ VRClient::UnloggedRequestTimeoutCallback()
     PendingRequest *req = pendingUnloggedRequest;
     pendingUnloggedRequest = NULL;
 
-    Warning("Unlogged request timed out");
+    // Warning("Unlogged request timed out");
 
     unloggedRequestTimeout->Stop();
     

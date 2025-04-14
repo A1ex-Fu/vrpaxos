@@ -43,7 +43,7 @@ Log::Log(bool useHash, opnum_t start, string initialHash)
 {
     this->initialHash = initialHash;
     this->start = start;
-    // Panic("start is %d", start);
+    // Notice("start is %d", start);
     if (start == 1) {
         ASSERT(initialHash == EMPTY_HASH);
     }
@@ -56,6 +56,7 @@ Log::Append(viewstamp_t vs, const Request &req, LogEntryState state)
     if (entries.empty()) {
         ASSERT(vs.opnum == start);
     } else {
+        // Notice("opnum %d and lastopnum+1 is %d", vs.opnum, LastOpnum()+1);
         ASSERT(vs.opnum == LastOpnum()+1);
     }
 
@@ -186,7 +187,7 @@ Log::RemoveUpTo(opnum_t op)
 
 	ASSERT(op >= start);
 
-    Notice("Removing log entries up to " FMT_OPNUM "; start is " FMT_OPNUM, op, start);
+    // Notice("Removing log entries up to " FMT_OPNUM "; start is " FMT_OPNUM, op, start);
 	ASSERT(entries.begin()->viewstamp.opnum == start);
 	while (start <= op) {
 		// Shouldn't erase uncommitted entries---everyone should have committed
@@ -198,7 +199,7 @@ Log::RemoveUpTo(opnum_t op)
 	}
 
 	ASSERT(entries.empty() || entries.begin()->viewstamp.opnum == op + 1);
-	Notice("New log size: " FMT_OPNUM, entries.size());
+	// Notice("New log size: " FMT_OPNUM, entries.size());
 }
 
 

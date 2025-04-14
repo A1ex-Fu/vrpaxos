@@ -66,12 +66,12 @@ Client::Client(Proto mode, string configPath, int nShards)
             case PROTO_VR:
                 shard[i] = new specpaxos::vr::VRClient(shardConfig, &transport);
                 break;
-            case PROTO_SPEC:
-                shard[i] = new specpaxos::spec::SpecClient(shardConfig, &transport);
-                break;
-            case PROTO_FAST:
-                shard[i] = new specpaxos::fastpaxos::FastPaxosClient(shardConfig, &transport);
-                break;
+            // case PROTO_SPEC:
+            //     shard[i] = new specpaxos::spec::SpecClient(shardConfig, &transport);
+            //     break;
+            // case PROTO_FAST:
+            //     shard[i] = new specpaxos::fastpaxos::FastPaxosClient(shardConfig, &transport);
+            //     break;
             default:
                 NOT_REACHABLE();
         }

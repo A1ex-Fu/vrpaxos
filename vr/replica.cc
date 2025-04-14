@@ -28,20 +28,21 @@
  *
  **********************************************************************/
 
-#include "common/replica.h"
-#include "vr/replica.h"
-#include "vr/vr-proto.pb.h"
+ #include "common/replica.h"
+ #include "vr/replica.h"
+ #include "vr/vr-proto.pb.h"
+ 
+ #include "lib/assert.h"
+ #include "lib/configuration.h"
+ #include "lib/latency.h"
+ #include "lib/message.h"
+ #include "lib/transport.h"
+ #include "lib/simtransport.h"
 
-#include "lib/assert.h"
-#include "lib/configuration.h"
-#include "lib/latency.h"
-#include "lib/message.h"
-#include "lib/transport.h"
-#include "lib/simtransport.h"
-
-
-#include <algorithm>
-#include <random>
+ 
+ #include <algorithm>
+ #include <random>
+ 
 
 #define RDebug(fmt, ...) Debug("[%d] " fmt, myIdx, ##__VA_ARGS__)
 #define RNotice(fmt, ...) Notice("[%d] " fmt, myIdx, ##__VA_ARGS__)
@@ -74,6 +75,11 @@ VRReplica::VRReplica(Configuration config, int myIdx,
     this->lastCommitted = 0;
     this->lastRequestStateTransferView = 0;
     this->lastRequestStateTransferOpnum = 0;
+
+    //init to 0 because always starts in a view
+    this->viewEpoch = 0;
+
+
     lastBatchEnd = 0;
     batchComplete = true;
     isDelegated = (config.n>1);
@@ -87,12 +93,13 @@ VRReplica::VRReplica(Configuration config, int myIdx,
         // Notice("Batching enabled; batch size %d", batchSize);
     }
 
-    this->viewChangeTimeout = new Timeout(transport, 5000, [this,myIdx]() {
-            RWarning("Have not heard from leader; starting view change");
+    this->viewChangeTimeout = new Timeout(transport, 5000, [this,myIdx,config]() {
+            // RWarning("Have not heard from leader; starting view change");
 			view_t step = 1;
 			while (IsWitness(configuration.GetLeaderIndex(view + step))) {
 				step++; 
 			}
+        
             StartViewChange(view + step);
         });
     this->nullCommitTimeout = new Timeout(transport, 1000, [this]() {
@@ -302,7 +309,7 @@ VRReplica::OnHeartbeatTimer()
         if(pair.second >= heartbeatMissThreshold){
             //node is dead
             if (specpaxos::IsWitness(pair.first) && isDelegated){
-                Warning("turned off delegation");
+                // Warning("[%d] turned off delegation", myIdx);
                 isDelegated = false;
             }else{
                 //TODO - idle node --> replica node
@@ -338,8 +345,10 @@ VRReplica::OnHeartbeatTimer()
 void
 VRReplica::SendPrepareOKs(opnum_t oldLastOp)
 {
+
     /* Send PREPAREOKs for new uncommitted operations */
     for (opnum_t i = oldLastOp; i <= lastOp; i++) {
+
         /* It has to be new *and* uncommitted */
         if (i <= lastCommitted) {
             continue;
@@ -417,6 +426,9 @@ VRReplica::EnterView(view_t newview)
     lastBatchEnd = lastOp;
     batchComplete = true;
 
+
+    this->viewEpoch++;
+
     recoveryTimeout->Stop();
 
     if (AmLeader()) {
@@ -459,9 +471,10 @@ VRReplica::StartViewChange(view_t newview)
     m.set_view(newview);
     m.set_replicaidx(myIdx);
     m.set_lastcommitted(lastCommitted);
+    m.set_viewepoch(viewEpoch);
 
-    if (!SendMessageToAllReplicas(m)) {
-        RWarning("Failed to send StartViewChange message to all replicas");
+    if (!SendMessageToAll(m)) {
+        RWarning("Failed to send StartViewChange message to all nodes");
     }
 }
 
@@ -950,8 +963,10 @@ VRReplica::HandlePrepareOK(const TransportAddress &remote,
          *
          * This also notifies the client of the result.
          */
-        CommitUpTo(msg.opnum());
-        lastCommitteds.at(myIdx) = lastCommitted;
+        if(msg.replicaidx()%2 == 0){
+            CommitUpTo(msg.opnum());
+            lastCommitteds.at(myIdx) = lastCommitted;
+        }
 
         if (msgs->size() >= (unsigned)configuration.QuorumSize()) {
             return;
@@ -1123,6 +1138,7 @@ VRReplica::HandleStateTransfer(const TransportAddress &remote,
     /* Execute committed operations */
     ASSERT(msg.opnum() <= lastOp);
     CommitUpTo(msg.opnum());
+
     SendPrepareOKs(oldLastOp);
 
     // Process pending prepares
@@ -1159,13 +1175,16 @@ VRReplica::HandleStartViewChange(const TransportAddress &remote,
     }
 
     ASSERT(msg.view() == view);
-    
+
+
     if (auto msgs =
         startViewChangeQuorum.AddAndCheckForQuorum(msg.view(),
                                                    msg.replicaidx(),
-                                                   msg, false)) {
+                                                   msg, true)) {
         int leader = configuration.GetLeaderIndex(view);
-        // Don't try to send a DoViewChange message to ourselves
+
+
+        // only send out message if not leader
         if (leader != myIdx) {            
             DoViewChangeMessage dvc;
             dvc.set_view(view);
@@ -1173,6 +1192,7 @@ VRReplica::HandleStartViewChange(const TransportAddress &remote,
             dvc.set_lastop(lastOp);
             dvc.set_lastcommitted(lastCommitted);
             dvc.set_replicaidx(myIdx);
+            dvc.set_viewepoch(viewEpoch);
 
             // Figure out how much of the log to include
             opnum_t minCommitted = std::min_element(
@@ -1186,6 +1206,9 @@ VRReplica::HandleStartViewChange(const TransportAddress &remote,
             
             log.Dump(minCommitted,
                      dvc.mutable_entries());
+            
+
+            RDebug("    sending DOVIEWCHANGE " FMT_VIEW " from replica %d to %d",msg.view(), msg.replicaidx(), leader);
 
             if (!(transport->SendMessageToReplica(this, leader, dvc))) {
                 RWarning("Failed to send DoViewChange message to leader of new view");
@@ -1223,11 +1246,14 @@ VRReplica::HandleDoViewChange(const TransportAddress &remote,
     }
 
     ASSERT(configuration.GetLeaderIndex(msg.view()) == myIdx);
+
+    ASSERT(msg.viewepoch() == viewEpoch);
     
     auto msgs = doViewChangeQuorum.AddAndCheckForQuorum(msg.view(),
                                                         msg.replicaidx(),
                                                         msg, isDelegated);
     if (msgs != NULL) {
+ 
         // Find the response with the most up to date log, i.e. the
         // one with the latest viewstamp
         view_t latestView = log.LastViewstamp().view;
@@ -1238,6 +1264,11 @@ VRReplica::HandleDoViewChange(const TransportAddress &remote,
 
         for (const auto &kv : *msgs) {
             const DoViewChangeMessage &x = kv.second;
+
+            if(x.replicaidx() % 2 != 0){
+                continue;
+            }
+
 			highestCommitted = std::max(x.lastcommitted(), highestCommitted); 
             if ((x.lastnormalview() > latestView) ||
                 (((x.lastnormalview() == latestView) &&
@@ -1304,6 +1335,11 @@ VRReplica::HandleDoViewChange(const TransportAddress &remote,
         lastOp = latestOp;
 
         EnterView(msg.view());
+        
+        viewEpoch += 1;
+        
+        Notice("incremented view epoch to %d\n", viewEpoch);
+        // fflush(stdout);
 
         ASSERT(AmLeader());
         
@@ -1318,11 +1354,12 @@ VRReplica::HandleDoViewChange(const TransportAddress &remote,
         sv.set_view(view);
         sv.set_lastop(lastOp);
         sv.set_lastcommitted(lastCommitted);
+        sv.set_viewepoch(viewEpoch);
         
         log.Dump(minCommitted, sv.mutable_entries());
 
 
-
+        Notice("[%d] is leader of view %d - sending startviewmessage to all", myIdx, view);
         if (!(transport->SendMessageToAll(this, sv))) {
             RPanic("failed to send to all");
             RWarning("Failed to send StartView message to all replicas");
@@ -1352,6 +1389,9 @@ VRReplica::HandleStartView(const TransportAddress &remote,
 
     ASSERT(configuration.GetLeaderIndex(msg.view()) != myIdx);
 
+    ASSERT(viewEpoch < msg.viewepoch());
+    viewEpoch = msg.viewepoch();
+
     if (msg.entries_size() == 0) {
         ASSERT(msg.lastcommitted() == lastCommitted);
         ASSERT(msg.lastop() == msg.lastcommitted());
@@ -1377,6 +1417,7 @@ VRReplica::HandleStartView(const TransportAddress &remote,
     ASSERT(!AmLeader());
 
     CommitUpTo(msg.lastcommitted());
+    
     SendPrepareOKs(oldLastOp);
 }
 
@@ -1608,6 +1649,23 @@ bool VRReplica::SendMessageToAllReplicas(const ::google::protobuf::Message &msg)
     }
     return true;
 }
+
+bool VRReplica::SendMessageToAll(const ::google::protobuf::Message &msg) {
+    //replicas are odd numbered (but zero-index so start at 0)
+    for(int i=0; i<configuration.n; i++){
+        if(i==myIdx){
+            continue;
+        }
+        if (!(transport->SendMessageToReplica(this,
+                                            i,
+                                            msg))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+
 
 size_t VRReplica::GetLogSize(){
     return log.Size();
