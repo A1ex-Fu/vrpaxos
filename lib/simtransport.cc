@@ -243,3 +243,7 @@ SimulatedTransport::CancelAllTimers()
     timers.clear();
     processTimers = false;
 }
+
+// int SimulatedTransport::ReplicaIndex(const TransportAddress &addr) const override {
+//     return static_cast<const SimulatedTransportAddress &>(addr).GetAddr();
+// }

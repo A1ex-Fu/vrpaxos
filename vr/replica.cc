@@ -83,6 +83,7 @@ VRReplica::VRReplica(Configuration config, int myIdx,
     lastBatchEnd = 0;
     batchComplete = true;
     isDelegated = (config.n>1);
+    Notice("\n\n\nDELEGATED\n\n\n");
     //change for replica only TESTING
     // isDelegated = false;
 
@@ -122,7 +123,7 @@ VRReplica::VRReplica(Configuration config, int myIdx,
             SendRecoveryMessages();
         });
 
-    this->heartbeatTimeout = new Timeout(transport, 1500, [this]() {
+    this->heartbeatTimeout = new Timeout(transport, 5000, [this]() {
             // Warning("heartbeat timeout triggered");
             OnHeartbeatTimer();
         });
@@ -311,6 +312,7 @@ VRReplica::OnHeartbeatTimer()
             if (specpaxos::IsWitness(pair.first) && isDelegated){
                 // Warning("[%d] turned off delegation", myIdx);
                 isDelegated = false;
+                Notice("\n\n\nNOT DELEGATED\n\n\n");
             }else{
                 //TODO - idle node --> replica node
             }
@@ -332,6 +334,13 @@ VRReplica::OnHeartbeatTimer()
                         m.cleanupto(), cleanUpTo);
             }
             
+            if(pair.first >= configuration.n){
+                int x = pair.first;
+                int y = configuration.n;
+            }else{
+                int x = pair.first;
+                int y = configuration.n;
+            }
             // RNotice("Sending heartbeat to %d who has %d misses", pair.first, pair.second);
             if (!transport->SendMessageToReplica(this, pair.first, m)) {
                 RWarning("Failed to send heartbeat message to all replicas");
@@ -485,6 +494,7 @@ VRReplica::StartViewChange(view_t newview)
 void
 VRReplica::SendNullCommit()
 {
+    // Notice("Sending null commit");
     CommitMessage cm;
     cm.set_view(this->view);
     cm.set_opnum(this->lastCommitted);
@@ -604,17 +614,17 @@ VRReplica::ReceiveMessage(const TransportAddress &remote,
 
 
 
-    const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
-    int srcAddr = simRemote.GetAddr();
+    // const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
+    // int srcAddr = simRemote.GetAddr();
 
-    // RWarning("Received %s message in VR Replica from %d", type.c_str(), srcAddr);
+    // Notice("%d Received %s message in VR Replica from %s", myIdx, type.c_str(), remote.ToString().c_str());
 
-    //made the assumption that messages received from servers with a replica index < configuration.n are replicas/witnesses
-    // if this assumption is false, we must find some way to determine if a sender is a replica or a client
-    if(AmLeader() && (srcAddr<configuration.n)){
-        heartbeatCheck[srcAddr] = 0;
-        // RWarning("created heartbeatcheck entry for %d", srcAddr);
-    }
+    // //made the assumption that messages received from servers with a replica index < configuration.n are replicas/witnesses
+    // // if this assumption is false, we must find some way to determine if a sender is a replica or a client
+    // if(AmLeader() && (srcAddr<configuration.n)){
+    //     heartbeatCheck[srcAddr] = 0;
+    //     // RWarning("created heartbeatcheck entry for %d", srcAddr);
+    // }
 
 
     if (type == request.GetTypeName()) {
@@ -918,7 +928,7 @@ VRReplica::HandlePrepareOK(const TransportAddress &remote,
                            const PrepareOKMessage &msg)
 {
 
-    // Warning("handle prepare ok");
+    Notice("handle prepare ok\n\n\n");
 
     RDebug("Received PREPAREOK <" FMT_VIEW ", "
            FMT_OPNUM  "> from replica %d",
@@ -1569,6 +1579,7 @@ VRReplica::HandleHeartbeat(const TransportAddress &remote,
     HeartbeatReply reply;
     reply.set_view(view);
     reply.set_slotout(lastCommitted);
+    reply.set_replicaidx(myIdx);
 
     RDebug("Sending HBReply " FMT_VIEWSTAMP,
             reply.view(), reply.slotout());
@@ -1596,9 +1607,18 @@ VRReplica::HandleHeartbeatReply(const TransportAddress &remote,
     }
     Assert(AmLeader());
 
-    const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
-    int srcAddr = simRemote.GetAddr();
+    // const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
+    // int srcAddr = simRemote.GetAddr();
     
+    // heartbeatCheck[srcAddr] = 0;
+    //the above doesnt work unless its a simulated address - had to add index field
+    int srcAddr = msg.replicaidx();
+
+    if (heartbeatCheck.find(srcAddr) == heartbeatCheck.end()) {
+        RDebug("Received HeartbeatReply from new address %d; adding to heartbeatCheck", srcAddr);
+    }
+    
+
     heartbeatCheck[srcAddr] = 0;
 
     if(IsReplica(myIdx)){

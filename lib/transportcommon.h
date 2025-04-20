@@ -77,13 +77,6 @@ public:
 
         auto kv = replicaAddresses[cfg].find(replicaIdx);
         
-        
-        // Warning("trying to send to cfg: %d   replicaIdx: %d    address: %d", cfg, replicaIdx, kv);
-        // for(const auto&pair : replicaAddresses[cfg]){
-        //     Warning("cfg: %d   replicaIdx: %d    address: %d", cfg, pair.first, pair.second);
-            
-        // }
-
         ASSERT(kv != replicaAddresses[cfg].end());
         
         return SendMessageInternal(src, kv->second, m, false);

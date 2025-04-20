@@ -173,4 +173,5 @@ message Heartbeat {
 message HeartbeatReply {
     required uint64 view = 1;
     required uint64 slotOut = 2;
+    required uint32 replicaIdx = 3;
 }

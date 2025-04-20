@@ -181,16 +181,16 @@ VRWitness::ReceiveMessage(const TransportAddress &remote,
     static Heartbeat heartbeat;
     static ChainMessage chainMessage;
 
-    const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
-    int srcAddr = simRemote.GetAddr();
+    // const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
+    // int srcAddr = simRemote.GetAddr();
 
-    // RWarning("Received %s message in VR Witness from %d", type.c_str(), srcAddr);
+    // Notice("%d Received %s message in VR Witness from %s", myIdx, type.c_str(), remote.ToString().c_str());
     
     std::stringstream ss;
     size_t pos = type.rfind('.');
     std::string messageName = (pos != std::string::npos) ? type.substr(pos + 1) : type;
 
-    ss << "received " << messageName << " from " << getRole(srcAddr) << " " << srcAddr;
+    // ss << "received " << messageName << " from " << getRole(srcAddr) << " " << srcAddr;
     WriteToTrace(ss.str());
     
     if (type == request.GetTypeName()) {
@@ -537,6 +537,7 @@ VRWitness::HandleHeartbeat(const TransportAddress &remote,
     HeartbeatReply reply;
     reply.set_view(view);
     reply.set_slotout(lastCommitted);
+    reply.set_replicaidx(myIdx);
 
     RDebug("Sending HBReply " FMT_VIEWSTAMP,
             reply.view(), reply.slotout());

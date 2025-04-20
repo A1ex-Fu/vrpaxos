@@ -41,6 +41,7 @@ class TransportAddress
 public:
     virtual ~TransportAddress() { }
     virtual TransportAddress *clone() const = 0;
+    virtual string ToString() const=0;
 };
 
 class TransportReceiver
@@ -79,6 +80,8 @@ public:
     virtual int Timer(uint64_t ms, timer_callback_t cb) = 0;
     virtual bool CancelTimer(int id) = 0;
     virtual void CancelAllTimers() = 0;
+    // virtual int ReplicaIndex(const TransportAddress &addr) const = 0;
+
 };
 
 class Timeout

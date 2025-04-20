@@ -66,6 +66,10 @@ void
 BenchmarkClient::Start()
 {
     n = 0;
+
+    Notice("Starting benchmark with %d requests, delay: %lu ms, warmup: %d sec", 
+        numRequests, delay, warmupSec);
+
     transport.Timer(warmupSec * 1000,
                     std::bind(&BenchmarkClient::WarmupDone,
                                this));
@@ -114,6 +118,8 @@ BenchmarkClient::SendNext()
     std::ostringstream msg;
     msg << "request" << n;
 
+    // Notice("Sending request %d", n);
+
     Latency_Start(&latency);
     client.Invoke(msg.str(), std::bind(&BenchmarkClient::OnReply,
                                        this,
@@ -124,25 +130,42 @@ BenchmarkClient::SendNext()
 void
 BenchmarkClient::OnReply(const string &request, const string &reply)
 {
-    if (cooldownDone) {
+    // Notice("Received reply to %s: %s", request.c_str(), reply.c_str());
+
+    if (cooldownDone || done) {
         return;
     }
     
-    if ((started) && (!done) && (n != 0)) {
+    if (started) {
+        // Notice("started and on tracked reply %d of %d", n, numRequests);
         uint64_t ns = Latency_End(&latency);
         latencies.push_back(ns);
-        if (n > numRequests) {
+        n++;
+        
+        // Check if we've reached the target number of requests
+        if (n >= numRequests) {
             Finish();
+            return;
         }
-    }
-    
-    n++;
-    if (delay == 0) {
-       SendNext();
+        
+        // Only send next request if we haven't finished
+        if (delay == 0) {
+            SendNext();
+        } else {
+            uint64_t rdelay = rand() % delay*2;
+            transport.Timer(rdelay,
+                          std::bind(&BenchmarkClient::SendNext, this));
+        }
     } else {
-        uint64_t rdelay = rand() % delay*2;
-        transport.Timer(rdelay,
-                        std::bind(&BenchmarkClient::SendNext, this));
+        // Still in warmup period
+        n++;
+        if (delay == 0) {
+            SendNext();
+        } else {
+            uint64_t rdelay = rand() % delay*2;
+            transport.Timer(rdelay,
+                          std::bind(&BenchmarkClient::SendNext, this));
+        }
     }
 }
 

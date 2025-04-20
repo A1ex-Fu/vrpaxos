@@ -49,6 +49,7 @@ class UDPTransportAddress : public TransportAddress
 {
 public:
     UDPTransportAddress * clone() const;
+    string ToString() const;
 private:
     UDPTransportAddress(const sockaddr_in &addr);
     sockaddr_in addr;
@@ -138,5 +139,9 @@ private:
     static void SignalCallback(evutil_socket_t fd,
                                short what, void *arg);
 };
+
+
+
+
 
 #endif  // _LIB_UDPTRANSPORT_H_

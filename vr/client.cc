@@ -58,7 +58,7 @@ VRClient::VRClient(const Configuration &config,
     gotAck = false; 
     view = 0;
     
-    requestTimeout = new Timeout(transport, 7000, [this]() {
+    requestTimeout = new Timeout(transport, 1, [this]() {
             ResendRequest();
         });
     unloggedRequestTimeout = new Timeout(transport, 1000, [this]() {
@@ -186,8 +186,10 @@ VRClient::ReceiveMessage(const TransportAddress &remote,
     static proto::UnloggedReplyMessage unloggedReply;
     static proto::PaxosAck paxosAck;
 
-    const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
-    int srcAddr = simRemote.GetAddr();
+    // const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
+    // int srcAddr = simRemote.GetAddr();
+
+    Debug("Received %s message in VR Client from %s", type.c_str(), remote.ToString().c_str());
 
     // Warning("Received %s message in VR Client from %d", type.c_str(), srcAddr);
     
@@ -272,7 +274,7 @@ void
 VRClient::HandlePaxosAck(const TransportAddress &remote,
                               const proto::PaxosAck &msg)
 {
-    Debug("Client received paxosAck");
+    // Notice("Client received paxosAck from %d", msg.replicaidx());
 
 
     if (pendingRequest==NULL || msg.clientreqid() != pendingRequest->clientReqId) {
@@ -288,16 +290,22 @@ VRClient::HandlePaxosAck(const TransportAddress &remote,
         }
     }
 
-    const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
-    int srcAddr = simRemote.GetAddr();
-    
-    // Notice("got ack from %d", srcAddr);
+    // const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
+    // int srcAddr = simRemote.GetAddr();
+    // // Notice("got ack from %d", srcAddr);
 
-    auto it = std::find(replicas.begin(), replicas.end(), srcAddr); 
-    if (it != replicas.end()) { 
-        replicas.erase(it); 
-        // Warning("got ack from %d - still have %d replicas", srcAddr, replicas.size());
-    } 
+    // auto it = std::find(replicas.begin(), replicas.end(), srcAddr); 
+    // if (it != replicas.end()) { 
+    //     replicas.erase(it); 
+    //     // Warning("got ack from %d - still have %d replicas", srcAddr, replicas.size());
+    // } 
+
+    
+    auto it = std::find(replicas.begin(), replicas.end(), msg.replicaidx());
+    if (it != replicas.end()) {
+        replicas.erase(it);
+    }
+
 
     if (replicas.size()==1){
         this->gotAck = true;

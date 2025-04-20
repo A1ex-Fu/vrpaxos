@@ -776,3 +776,10 @@ UDPTransport::SignalCallback(evutil_socket_t fd, short what, void *arg)
     UDPTransport *transport = (UDPTransport *)arg;
     event_base_loopbreak(transport->libeventBase);
 }
+
+
+std::string UDPTransportAddress::ToString() const {
+    char ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(addr.sin_addr), ip, INET_ADDRSTRLEN);
+    return std::string(ip) + ":" + std::to_string(ntohs(addr.sin_port));
+}

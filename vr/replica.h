@@ -43,6 +43,7 @@
 #include <map>
 #include <memory>
 #include <list>
+#include <unordered_map>
 
 namespace specpaxos {
 namespace vr {
@@ -106,6 +107,8 @@ private:
 
     Latency_t requestLatency;
     Latency_t executeAndReplyLatency;
+
+    std::unordered_map<uint64_t, Request> pendingClientRequests;
 
     uint64_t GenerateNonce() const;
     bool AmLeader() const;

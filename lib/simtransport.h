@@ -48,6 +48,11 @@ public:
     {
         return !(*this == other);            
     }
+
+    string ToString() const override {
+        return std::to_string(addr);
+    }
+
 private:
     SimulatedTransportAddress(int addr);
     
@@ -112,5 +117,7 @@ private:
     uint64_t vtime;
     bool processTimers;
 };
+
+
 
 #endif  // _LIB_SIMTRANSPORT_H_
