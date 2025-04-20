@@ -2,7 +2,7 @@ Witness 1 received RequestMessage from Client 5
     RequestMessage:
         req {
           op: "test: 0"
-          clientid: 11710109045550958012
+          clientid: 3492789075005433930
           clientreqid: 1
         }
 
@@ -10,11 +10,11 @@ Witness 1 received RequestMessage from Client 5
 Witness 1 sent ChainMessage to {Witness 3}
     ChainMessage:
         view: 0
-        opnum: 1
+        opnum: 18446744073709551615
         replicaIdx: 1
         req {
           op: "test: 0"
-          clientid: 11710109045550958012
+          clientid: 3492789075005433930
           clientreqid: 1
         }
 
