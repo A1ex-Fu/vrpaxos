@@ -484,6 +484,7 @@
          if (IsWitness(i)) {
              continue;
          }
+         Notice("chekcing app %d", i);
          EXPECT_EQ(1, apps[i]->ops.size());
     }
  }
@@ -649,6 +650,9 @@
  
  TEST_P(VRTest, Stress)
  {
+
+    // const int NUM_CLIENTS = 1;
+    // const int MAX_REQS = 5;
      const int NUM_CLIENTS = 10;
      const int MAX_REQS = 100;
      const int MAX_DELAY = 1;

@@ -75,7 +75,8 @@ private:
 
     int viewEpoch;
     
-    Log log;
+    // Log log;
+    std::map<int, std::map<int, int>> clientRequestMap;
 
     QuorumSet<view_t, proto::StartViewChangeMessage> startViewChangeQuorum;
 

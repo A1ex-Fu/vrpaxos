@@ -38,6 +38,8 @@
  #include "lib/message.h"
  #include "lib/transport.h"
  #include "lib/simtransport.h"
+ #include <unordered_map>
+
 
  
  #include <algorithm>
@@ -94,7 +96,7 @@ VRReplica::VRReplica(Configuration config, int myIdx,
         // Notice("Batching enabled; batch size %d", batchSize);
     }
 
-    this->viewChangeTimeout = new Timeout(transport, 5000, [this,myIdx,config]() {
+    this->viewChangeTimeout = new Timeout(transport, 10000, [this,myIdx,config]() {
             // RWarning("Have not heard from leader; starting view change");
 			view_t step = 1;
 			while (IsWitness(configuration.GetLeaderIndex(view + step))) {
@@ -123,7 +125,7 @@ VRReplica::VRReplica(Configuration config, int myIdx,
             SendRecoveryMessages();
         });
 
-    this->heartbeatTimeout = new Timeout(transport, 5000, [this]() {
+    this->heartbeatTimeout = new Timeout(transport, 2500, [this]() {
             // Warning("heartbeat timeout triggered");
             OnHeartbeatTimer();
         });
@@ -206,6 +208,8 @@ VRReplica::CommitUpTo(opnum_t upto)
         reply.set_view(entry->viewstamp.view);
         reply.set_opnum(entry->viewstamp.opnum);
         reply.set_clientreqid(entry->request.clientreqid());
+        reply.set_replicaidx(myIdx);
+        reply.set_n(configuration.n);
         
         /* Mark it as committed */
         log.SetStatus(lastCommitted, LOG_STATE_COMMITTED);
@@ -226,9 +230,23 @@ VRReplica::CommitUpTo(opnum_t upto)
         
         if(AmLeader() || !isDelegated){
             /* Send reply */
+            // Notice("%d sending reply for %d, %d and isleader=%d", myIdx, entry->request.clientid(), entry->request.clientreqid(), AmLeader());
             auto iter = clientAddresses.find(entry->request.clientid());
             if (iter != clientAddresses.end()) {
                 transport->SendMessage(this, *iter->second, reply);
+            }
+        }else{
+            // Notice("sending ack from here");
+            auto iter = clientAddresses.find(entry->request.clientid());
+            PaxosAck paxosAck;
+            paxosAck.set_clientreqid(entry->request.clientreqid());
+            paxosAck.set_replicaidx(myIdx);
+            // *paxosAck.mutable_req() = msg.req();
+            paxosAck.set_n(configuration.n);
+
+            if (iter != clientAddresses.end()) {
+                // Notice("%d sending ack for %d, %d and isleader=%d", myIdx, entry->request.clientid(), entry->request.clientreqid(), AmLeader());
+                transport->SendMessage(this, *iter->second, paxosAck);
             }
         }
 
@@ -266,6 +284,8 @@ VRReplica::ExecuteLog()
         reply.set_view(entry->viewstamp.view);
         reply.set_opnum(entry->viewstamp.opnum);
         reply.set_clientreqid(entry->request.clientreqid());
+        reply.set_replicaidx(myIdx);
+        reply.set_n(configuration.n);
 
         // Store reply in the client table
         ClientTableEntry &cte =
@@ -288,6 +308,7 @@ VRReplica::ExecuteLog()
             if (iter != clientAddresses.end()) {
                 transport->SendMessage(this, *iter->second, reply);
             }
+            Notice("%d sending reply from 2 and isleader=%d", myIdx, AmLeader());
         }
 
         Latency_End(&executeAndReplyLatency);
@@ -315,11 +336,12 @@ VRReplica::OnHeartbeatTimer()
                 Notice("\n\n\nNOT DELEGATED\n\n\n");
             }else{
                 //TODO - idle node --> replica node
+                Notice("%d is unresponsive", pair.first);
             }
         }else if (pair.second < heartbeatMissThreshold){
             pair.second++;
 
-            //send them a hb message to make sure they are unresponsive
+            //send them a hb message to make sure they are responsive
             Heartbeat m;
             m.set_view(view);
             m.set_slotexecuted(GetLowestReplicaCommit());
@@ -692,23 +714,6 @@ VRReplica::HandleRequest(const TransportAddress &remote,
         return;
     }
 
-    if (!AmLeader()) {
-        RDebug("Non-leader replica has request");
-        
-        PaxosAck paxosAck;
-        paxosAck.set_clientreqid(msg.req().clientreqid());
-        paxosAck.set_replicaidx(myIdx);
-        // Request *r = paxosAck.add_req();
-        // *r = msg.req();
-        *paxosAck.mutable_req() = msg.req();
-        paxosAck.set_n(configuration.n);
-        if (!(transport->SendMessage(this, remote, paxosAck)))
-            Warning("Failed to send paxosAck message");
-
-
-        Latency_EndType(&requestLatency, 'i');
-        return;        
-    }
     // Save the client's address
     clientAddresses.erase(msg.req().clientid());
     clientAddresses.insert(
@@ -730,6 +735,23 @@ VRReplica::HandleRequest(const TransportAddress &remote,
             // have one. We might not have a reply to resend if we're
             // waiting for the other replicas; in that case, just
             // discard the request.
+            if (!AmLeader()) {
+                RDebug("Non-leader replica has duplicate request");
+                PaxosAck paxosAck;
+                paxosAck.set_clientreqid(msg.req().clientreqid());
+                paxosAck.set_replicaidx(myIdx);
+                // Request *r = paxosAck.add_req();
+                // *r = msg.req();
+                // *paxosAck.mutable_req() = msg.req();
+                paxosAck.set_n(configuration.n);
+                if (!(transport->SendMessage(this, remote, paxosAck)))
+                    Warning("Failed to send paxosAck message");
+        
+        
+                Latency_EndType(&requestLatency, 'i');
+                return;        
+            }
+
             if (entry.replied) {
                 // RNotice("Received duplicate request; resending reply");
                 if (!(transport->SendMessage(this, remote,
@@ -769,10 +791,13 @@ VRReplica::HandleRequest(const TransportAddress &remote,
             reply.set_view(0);
             reply.set_opnum(0);
             reply.set_clientreqid(msg.req().clientreqid());
+            reply.set_replicaidx(myIdx);
+            reply.set_n(configuration.n);
             cte.replied = true;
             cte.reply = reply;
             transport->SendMessage(this, remote, reply);
             Latency_EndType(&requestLatency, 'f');
+            Notice("%d sending reply from 3 and isleader=%d", myIdx, AmLeader());
         } else {
             
                 Request request;
@@ -789,6 +814,7 @@ VRReplica::HandleRequest(const TransportAddress &remote,
 
                 /* Add the request to my log */
                 log.Append(v, request, LOG_STATE_PREPARED);
+                
 
                 if (batchComplete ||
                     (lastOp - lastBatchEnd+1 > (unsigned int)batchSize)) {
@@ -804,6 +830,10 @@ VRReplica::HandleRequest(const TransportAddress &remote,
             Latency_End(&requestLatency);
             
         }
+    }else{
+        //when delegated, add it to the table of id-->request for retrieval upon receival of witnessDecision
+        requestTable[msg.req().clientid()] = msg.req();
+        // Notice("added request %d to request table", msg.req().clientreqid());
     }
 }
 
@@ -1512,8 +1542,8 @@ void
 VRReplica::HandleWitnessDecision(const TransportAddress &remote,
                                   const WitnessDecision &msg)
 {
-    // Warning("[%d] RECEIVED WITNESSDECISION   -   client: %d; reply: %s; slot: %d", myIdx, msg.req().clientreqid(), msg.reqstr().c_str(), msg.opnum());
-
+    // Warning("[%d] RECEIVED WITNESSDECISION   -   clientid: %d; slot: %d lastOpnum: %d", myIdx, msg.clientreqid(),msg.opnum(), log.LastOpnum()+1);
+    // Notice("%d got witness decision", myIdx);
     Assert(specpaxos::IsWitness(msg.replicaidx()));
 
     if (msg.view() > view) {
@@ -1526,25 +1556,37 @@ VRReplica::HandleWitnessDecision(const TransportAddress &remote,
         return;
     }
 
+    //retrieve request using reqID
+    specpaxos::Request msgReq = requestTable[msg.clientid()];
+    
 
+    if(msgReq.clientreqid() < msg.clientreqid()){
+        Notice("Case where replica received new message AFTER witness did");
+        return;
+    }
+    // Assert(msgReq.clientreqid() == msg.clientreqid());
+    
 
-    // Warning("putting request: %s with clientid: %d; clientreqid: %d; op: %d   at slot: %d", msg.reqstr().c_str(), msg.req().clientid(), msg.req().clientreqid(), msg.req().op(), msg.opnum());
+    // Notice("\n%d putting request: %s with clientid: %d; clientreqid: %d;  at slot: %d\n", myIdx, msg.reqstr().c_str(), msg.clientid(), msg.clientreqid(), msg.opnum());
     if(msg.opnum() == log.LastOpnum()+1){
         viewstamp_t v;
-        this->lastOp++;
+        ++this->lastOp;
         v.view = this->view;
         v.opnum = msg.opnum();
+        // Notice("%d adding new op for %d,%d to log of size %lu",
+            // myIdx, msgReq.clientid(), msgReq.clientreqid(), log.Size());
+     
 
-        log.Append(v, msg.req(), LOG_STATE_COMMITTED);
+        log.Append(v, msgReq, LOG_STATE_COMMITTED);
         
-        UpdateClientTable(msg.req());
+        UpdateClientTable(msgReq);
     }else{
         viewstamp_t v;
         v.view = this->view;
         v.opnum = msg.opnum();
 
         //priority put - dont need to update table
-        log.PriorityPut(v, msg.req(), LOG_STATE_COMMITTED);
+        log.PriorityPut(v, msgReq, LOG_STATE_COMMITTED);
     }
     
     if(AmLeader()){
@@ -1554,6 +1596,16 @@ VRReplica::HandleWitnessDecision(const TransportAddress &remote,
         CommitUpTo(this->lastOp);
     }
 }
+
+
+
+
+
+
+
+
+
+
 
 
 void

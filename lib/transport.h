@@ -42,6 +42,7 @@ public:
     virtual ~TransportAddress() { }
     virtual TransportAddress *clone() const = 0;
     virtual string ToString() const=0;
+    virtual std::unique_ptr<TransportAddress> Clone() const = 0;
 };
 
 class TransportReceiver

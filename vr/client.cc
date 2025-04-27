@@ -36,9 +36,8 @@
  #include "vr/client.h"
  #include "vr/vr-proto.pb.h"
  #include "lib/simtransport.h"
-
- 
-#include "vr/witness.h"
+ #include "vr/witness.h"
+ #include <sstream>
 
 
 
@@ -58,7 +57,7 @@ VRClient::VRClient(const Configuration &config,
     gotAck = false; 
     view = 0;
     
-    requestTimeout = new Timeout(transport, 1, [this]() {
+    requestTimeout = new Timeout(transport, 1000, [this]() {
             ResendRequest();
         });
     unloggedRequestTimeout = new Timeout(transport, 1000, [this]() {
@@ -134,7 +133,7 @@ VRClient::SendRequest()
     reqMsg.mutable_req()->set_op(pendingRequest->request);
     reqMsg.mutable_req()->set_clientid(clientid);
     reqMsg.mutable_req()->set_clientreqid(pendingRequest->clientReqId);
-    // reqMsg.set_reqstr(pendingRequest->request);
+    reqMsg.set_reqstr(pendingRequest->request);
     
     // Warning("sending message %s to all", reqMsg.reqstr().c_str());
     // XXX Try sending only to (what we think is) the leader first
@@ -189,7 +188,7 @@ VRClient::ReceiveMessage(const TransportAddress &remote,
     // const SimulatedTransportAddress& simRemote = dynamic_cast<const SimulatedTransportAddress&>(remote);
     // int srcAddr = simRemote.GetAddr();
 
-    Debug("Received %s message in VR Client from %s", type.c_str(), remote.ToString().c_str());
+    // Notice("Received %s message in VR Client from %s", type.c_str(), remote.ToString().c_str());
 
     // Warning("Received %s message in VR Client from %d", type.c_str(), srcAddr);
     
@@ -214,25 +213,54 @@ void
 VRClient::HandleReply(const TransportAddress &remote,
                       const proto::ReplyMessage &msg)
 {
+    // Notice("got reply ");
     if (pendingRequest == NULL) {
         return;
     }
     if (msg.clientreqid() != pendingRequest->clientReqId) {
-        Warning("Received reply for a different request %s\n    was expecting: %d\n    got: %d", msg.reply().c_str(), pendingRequest->clientReqId, msg.clientreqid());
+        Warning("Client %d Received reply for a different request from %d %s\n    was expecting: %d\n    got: %d", clientid, msg.replicaidx(), msg.reply().c_str(), pendingRequest->clientReqId, msg.clientreqid());
         return;
     }
 
-    Debug("Client received reply");
+    if(replicas.size()==0 && gotAck==false) {
+        //add in replicas based on config from replica
+        for(int i =0; i<msg.n(); i++){
+            if(specpaxos::IsReplica(i)){
+                replicas.push_back(i);
+            }
+        }
+    }
+
+    int srcAddr = msg.replicaidx();
+    auto it = std::find(replicas.begin(), replicas.end(), srcAddr); 
+    if (it != replicas.end()) { 
+        replicas.erase(it); 
+    } 
+    if (replicas.size()==0){
+        this->gotAck = true;
+    }
+
+    std::ostringstream oss;
+    for (int replica : replicas) {
+        oss << replica << " ";
+    }
+    // Notice("Client %d received paxosReply for %d from %d - still need %s", clientid, msg.clientreqid(), msg.replicaidx(), oss.str().c_str());
+
+
+
 
     this->msg = new specpaxos::vr::proto::ReplyMessage(msg);
     if(this->gotAck && pendingRequest != NULL){
+        // Notice("got reply and ack");
         requestTimeout->Stop();
         PendingRequest *req = pendingRequest;
         pendingRequest = NULL;
         req->continuation(req->request, this->msg->reply());
         this->msg = NULL;
         delete req;
+        // Notice("client %d finished request %d", clientid, req->clientReqId);
     }else{
+        // Notice("got reply and no ack");
         // Warning("in handle reply for %s but no ack", this->msg->reply().c_str());
         // if(replicas.size()>0){
         //     string str;
@@ -281,7 +309,7 @@ VRClient::HandlePaxosAck(const TransportAddress &remote,
         return;
     }
 
-    if(replicas.size()==0) {
+    if(replicas.size()==0 && gotAck==false) {
         //add in replicas based on config from replica
         for(int i =0; i<msg.n(); i++){
             if(specpaxos::IsReplica(i)){
@@ -294,20 +322,23 @@ VRClient::HandlePaxosAck(const TransportAddress &remote,
     // int srcAddr = simRemote.GetAddr();
     // // Notice("got ack from %d", srcAddr);
 
-    // auto it = std::find(replicas.begin(), replicas.end(), srcAddr); 
-    // if (it != replicas.end()) { 
-    //     replicas.erase(it); 
-    //     // Warning("got ack from %d - still have %d replicas", srcAddr, replicas.size());
-    // } 
+    int srcAddr = msg.replicaidx();
+    auto it = std::find(replicas.begin(), replicas.end(), srcAddr); 
+    if (it != replicas.end()) { 
+        replicas.erase(it); 
+        // Warning("got ack from %d - still have %d replicas", srcAddr, replicas.size());
+    } 
 
     
-    auto it = std::find(replicas.begin(), replicas.end(), msg.replicaidx());
-    if (it != replicas.end()) {
-        replicas.erase(it);
+    std::ostringstream oss;
+    for (int replica : replicas) {
+        oss << replica << " ";
     }
+    // Notice("Client %d received paxosAck for %d from %d - still need %s", clientid, msg.clientreqid(), msg.replicaidx(), oss.str().c_str());
 
 
-    if (replicas.size()==1){
+
+    if (replicas.size()==0){
         this->gotAck = true;
     }
 
@@ -319,6 +350,7 @@ VRClient::HandlePaxosAck(const TransportAddress &remote,
         req->continuation(req->request, this->msg->reply());
         this->msg = NULL;
         delete req;
+        // Notice("client %d finished request %d", clientid, req->clientReqId);
     }
 
 }

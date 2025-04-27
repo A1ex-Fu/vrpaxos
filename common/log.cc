@@ -53,6 +53,7 @@ Log::Log(bool useHash, opnum_t start, string initialHash)
 LogEntry &
 Log::Append(viewstamp_t vs, const Request &req, LogEntryState state)
 {
+    // Notice("Appended request with id %d to log", req.clientreqid());
     if (entries.empty()) {
         ASSERT(vs.opnum == start);
     } else {

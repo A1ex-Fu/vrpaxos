@@ -50,6 +50,11 @@ class UDPTransportAddress : public TransportAddress
 public:
     UDPTransportAddress * clone() const;
     string ToString() const;
+
+    std::unique_ptr<TransportAddress> Clone() const override {
+        return std::make_unique<UDPTransportAddress>(*this);
+    }
+
 private:
     UDPTransportAddress(const sockaddr_in &addr);
     sockaddr_in addr;

@@ -45,6 +45,7 @@
 #include <random>
 #include <fstream>
 #include <sstream>
+#include <map>
 
 #define RDebug(fmt, ...) Debug("[%d] " fmt, myIdx, ##__VA_ARGS__)
 #define RNotice(fmt, ...) Notice("[%d] " fmt, myIdx, ##__VA_ARGS__)
@@ -62,7 +63,7 @@ VRWitness::VRWitness(Configuration config, int myIdx,
                      AppReplica *app)
     : Replica(config, myIdx, initialize, transport, app),
 	  lastCommitteds(config.n, 0),
-      log(false),
+    //   log(false),
       startViewChangeQuorum(config.QuorumSize()-1)
 {
     this->status = STATUS_NORMAL; 
@@ -120,26 +121,26 @@ VRWitness::~VRWitness()
 }
 
 
-void
-VRWitness::CommitUpTo(opnum_t upto)
-{
-    while (lastCommitted < upto) {
-        Latency_Start(&executeAndReplyLatency);
+// void
+// VRWitness::CommitUpTo(opnum_t upto)
+// {
+//     while (lastCommitted < upto) {
+//         Latency_Start(&executeAndReplyLatency);
         
-        lastCommitted++;
+//         lastCommitted++;
 
-        /* Find operation in log */
-        const LogEntry *entry = log.Find(lastCommitted);
-        if (!entry) {
-            RPanic("Did not find operation " FMT_OPNUM " in log", lastCommitted);
-        }
+//         /* Find operation in log */
+//         const LogEntry *entry = log.Find(lastCommitted);
+//         if (!entry) {
+//             RPanic("Did not find operation " FMT_OPNUM " in log", lastCommitted);
+//         }
         
-        /* Mark it as committed */
-        log.SetStatus(lastCommitted, LOG_STATE_COMMITTED);
+//         /* Mark it as committed */
+//         log.SetStatus(lastCommitted, LOG_STATE_COMMITTED);
 
-        Latency_End(&executeAndReplyLatency);
-    }
-}
+//         Latency_End(&executeAndReplyLatency);
+//     }
+// }
 
 
 void
@@ -245,7 +246,8 @@ VRWitness::StartViewChange(view_t newview)
 void
 VRWitness::HandleRequest(const TransportAddress &remote,
                          const RequestMessage &msg)
-{
+{   
+    // Notice("got request from client %d with ID %d", msg.req().clientid(), msg.req().clientreqid());
     if (status != STATUS_NORMAL) {
         // RNotice("Ignoring request due to abnormal status");
         return;
@@ -256,7 +258,18 @@ VRWitness::HandleRequest(const TransportAddress &remote,
 
         //ony first witness replies to requests
         if(myIdx == 1) {
-            int slotNum = log.Contains(msg.req());
+            // int slotNum = log.Contains(msg.req());
+            int slotNum = -1;
+            
+            auto clientIt = clientRequestMap.find(msg.req().clientid());
+            if (clientIt != clientRequestMap.end()) {
+                auto &requests = clientIt->second;
+                auto reqIt = requests.find(msg.req().clientreqid());
+                if (reqIt != requests.end()) {
+                    slotNum = reqIt->second;
+                }
+            }
+
             //decide on slotNum depending on whether it is a new command or not
             if(slotNum==-1){
                 //new command - get new slotNum, add to log, and increment slotin
@@ -280,7 +293,9 @@ VRWitness::HandleRequest(const TransportAddress &remote,
                 /* Add the request to my log */
                 // Notice("view is %d",this->view);
                 
-                log.Append(v, request, LOG_STATE_COMMITTED);
+                // log.Append(v, request, LOG_STATE_COMMITTED);
+                clientRequestMap[msg.req().clientid()][msg.req().clientreqid()] = v.opnum;
+                // Notice("set %d, %d as %d", msg.req().clientid(), msg.req().clientreqid(), v.opnum);
             }
 
             //chaining or not
@@ -291,8 +306,10 @@ VRWitness::HandleRequest(const TransportAddress &remote,
                 reply.set_view(view);
                 reply.set_opnum(slotNum);
                 reply.set_replicaidx(myIdx);
-                *reply.mutable_req() = msg.req();
-                // reply.set_reqstr(msg.reqstr());
+                reply.set_clientreqid(msg.req().clientreqid());
+                reply.set_clientid(msg.req().clientid());
+                reply.set_reqstr(msg.reqstr());
+                Notice("witness set message %s", msg.reqstr());
 
                 SendAndWrite(reply, -1);
                             
@@ -304,8 +321,9 @@ VRWitness::HandleRequest(const TransportAddress &remote,
                 reply.set_view(view);
                 reply.set_opnum(slotNum);
                 reply.set_replicaidx(myIdx);
-                *reply.mutable_req() = msg.req();
-
+                reply.set_clientreqid(msg.req().clientreqid());
+                reply.set_clientid(msg.req().clientid());
+                reply.set_reqstr(msg.reqstr());
                 // Warning("sending to %d when config.n is %d", (myIdx+2), configuration.n);
                 SendAndWrite(reply, (myIdx+2));
             }
@@ -348,7 +366,7 @@ VRWitness::HandleStartViewChange(const TransportAddress &remote,
         if (leader != myIdx) {            
             DoViewChangeMessage dvc;
             dvc.set_view(view);
-            dvc.set_lastnormalview(log.LastViewstamp().view);
+            dvc.set_lastnormalview(view);
             dvc.set_lastop(lastOp);
             dvc.set_lastcommitted(lastCommitted);
             dvc.set_replicaidx(myIdx);
@@ -362,11 +380,7 @@ VRWitness::HandleStartViewChange(const TransportAddress &remote,
                     return a.second.lastcommitted() < b.second.lastcommitted();
                 })->second.lastcommitted();
             minCommitted = std::min(minCommitted, lastCommitted);
-            minCommitted = std::min(minCommitted, GetLowestReplicaCommit());
-            
-            log.Dump(minCommitted,
-                     dvc.mutable_entries());
-            
+            minCommitted = std::min(minCommitted, GetLowestReplicaCommit());            
             
             SendAndWrite(dvc, leader);  
         }
@@ -403,25 +417,24 @@ VRWitness::HandleStartView(const TransportAddress &remote,
         ASSERT(msg.lastcommitted() == lastCommitted);
         ASSERT(msg.lastop() == msg.lastcommitted());
     } else {
-        if (msg.entries(0).opnum() > lastCommitted+1) {
+        if (msg.entries(0).opnum() > lastCommitted + 1) {
             RPanic("Not enough entries in STARTVIEW message to install new log");
         }
-        
-        // Install the new log
-        log.RemoveAfter(msg.lastop()+1);
-        log.Install(msg.entries().begin(),
-                    msg.entries().end());
-    }
 
+   
+        for (int i = 0; i < msg.entries_size(); ++i) {
+            const proto::StartViewMessage_LogEntry &entry = msg.entries(i); // Changed type here
+            clientRequestMap[entry.request().clientid()][entry.request().clientreqid()] = entry.opnum();
+        }
+    }
 
     EnterView(msg.view());
     opnum_t oldLastOp = lastOp;
 
     Notice("setting lastop %d to have value %d", lastOp, msg.lastop());
-    lastOp = msg.lastop()+1;
+    lastOp = msg.lastop() + 1;
 
-
-    CommitUpTo(msg.lastcommitted());
+    lastCommitted = msg.lastcommitted();
 }
 
 
@@ -443,7 +456,17 @@ VRWitness::HandleChainMessage(const TransportAddress &remote,
     if((status != STATUS_VIEW_CHANGE)) {
         viewstamp_t v;
 
-        int slotNum = log.Contains(msg.req());
+        // int slotNum = log.ContainsRequestID(msg.clientreqid());
+        int slotNum = -1;
+        auto clientIt = clientRequestMap.find(msg.clientid());
+        if (clientIt != clientRequestMap.end()) {
+            auto &requests = clientIt->second;
+            auto reqIt = requests.find(msg.clientreqid());
+            if (reqIt != requests.end()) {
+                slotNum = reqIt->second;
+            }
+        }
+
         //decide on slotNum depending on whether it is a new command or not
         if(slotNum==-1){
             //new command - get new slotNum, add to log, and increment slotin
@@ -452,19 +475,17 @@ VRWitness::HandleChainMessage(const TransportAddress &remote,
             //auto commit requests for the witness
             ++this->lastCommitted;
 
-            bool replicate = true;
-            string res;
-            LeaderUpcall(lastCommitted, msg.req().op(), replicate, res);
+            // bool replicate = true;
+            // string res;
+            // LeaderUpcall(lastCommitted, msg.req().op(), replicate, res);
         
-            Request request;
-            request.set_op(res);
-            request.set_clientid(msg.req().clientid());
-            request.set_clientreqid(msg.req().clientreqid());
             v.view = this->view;
             v.opnum = slotNum;
 
             /* Add the request to my log */
-            log.Append(v, request, LOG_STATE_PREPARED);
+            // log.Append(v, request, LOG_STATE_PREPARED);
+            clientRequestMap[msg.clientid()][msg.clientreqid()] = v.opnum;
+            // Notice("set %d, %d as %d", msg.clientid(), msg.clientreqid(), v.opnum);
         }
 
         //chaining or not
@@ -475,7 +496,9 @@ VRWitness::HandleChainMessage(const TransportAddress &remote,
             reply.set_view(view);
             reply.set_opnum(slotNum);
             reply.set_replicaidx(myIdx);
-            *reply.mutable_req() = msg.req();
+            reply.set_clientreqid(msg.clientreqid());
+            reply.set_clientid(msg.clientid());
+            reply.set_reqstr(msg.reqstr());
 
             SendAndWrite(reply, -1);
         } else {
@@ -485,8 +508,11 @@ VRWitness::HandleChainMessage(const TransportAddress &remote,
             reply.set_view(view);
             reply.set_opnum(slotNum);
             reply.set_replicaidx(myIdx);
-            *reply.mutable_req() = msg.req();
+            reply.set_clientreqid(msg.clientreqid());
+            reply.set_clientid(msg.clientid());
+            reply.set_reqstr(msg.reqstr());
             
+            //Assumes witnesses are every other node
             SendAndWrite(reply, (myIdx+2));
         }
     }
@@ -562,12 +588,20 @@ VRWitness::GetLowestReplicaCommit()
  * @brief Garbage collects log up to the current cleanUpTo value
  * 
  */
-void
-VRWitness::CleanLog()
-{
-	RNotice("Cleaning up to " FMT_OPNUM, cleanUpTo);
-	log.RemoveUpTo(cleanUpTo);
+void 
+VRWitness::CleanLog() {
+    RNotice("Cleaning up to " FMT_OPNUM, cleanUpTo);
+    // log.RemoveUpTo(cleanUpTo); // Removed
+
+    // for (auto it = clientRequestMap.begin(); it != clientRequestMap.end(); ) {
+    //     if (it->second <= cleanUpTo) {
+    //         it = clientRequestMap.erase(it);
+    //     } else {
+    //         ++it;
+    //     }
+    // }
 }
+
 
 /**
  * @brief send message @p msg to only the replica nodes in the system, not the witness nodes
@@ -594,14 +628,14 @@ bool VRWitness::SendMessageToAllReplicas(const ::google::protobuf::Message &msg)
     return true;
 }
 
-/**
- * @brief testing function from vrw code
- * 
- * @return size_t - size of the log
- */
-size_t VRWitness::GetLogSize(){
-    return log.Size();
-}
+// /**
+//  * @brief testing function from vrw code
+//  * 
+//  * @return size_t - size of the log
+//  */
+// size_t VRWitness::GetLogSize(){
+//     return log.Size();
+// }
 
 
 

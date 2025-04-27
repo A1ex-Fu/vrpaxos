@@ -53,6 +53,10 @@ public:
         return std::to_string(addr);
     }
 
+    std::unique_ptr<TransportAddress> Clone() const override {
+        return std::make_unique<SimulatedTransportAddress>(*this);
+    }
+
 private:
     SimulatedTransportAddress(int addr);
     

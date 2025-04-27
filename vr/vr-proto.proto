@@ -6,7 +6,7 @@ message RequestMessage {
     required specpaxos.Request req = 1;
 
     // for testing purposes
-    // optional string reqStr = 2;
+    optional string reqStr = 2;
 }
 
 message ReplyMessage {
@@ -14,6 +14,8 @@ message ReplyMessage {
     required uint64 opnum = 2;
     required bytes reply = 3;
     required uint64 clientreqid = 4;
+    required uint32 replicaIdx = 5;
+    required uint32 n = 6;
 }
 
 message UnloggedRequestMessage {
@@ -144,16 +146,17 @@ message WitnessDecision {
     required uint64 view = 1;
     required uint64 opnum = 2;
     required uint32 replicaIdx = 3;
-    required specpaxos.Request req = 4;
+    // required specpaxos.Request req = 4;
+    required uint64 clientreqid = 4;
+    required uint64 clientid = 5;
 
     // for testing purposes
-    // optional string reqStr = 5; 
+    optional string reqStr = 6; 
 }
 
 message PaxosAck {
     required uint64 clientreqid = 1;
     required uint32 replicaIdx = 2;
-    required specpaxos.Request req = 3;
     required uint64 n = 4;
 }
 
@@ -161,7 +164,9 @@ message ChainMessage {
     required uint64 view = 1;
     required uint64 opnum = 2;
     required uint32 replicaIdx = 3;
-    required specpaxos.Request req = 4;
+    required uint64 clientreqid = 4;
+    required uint64 clientid = 5;
+    optional string reqStr = 6; 
 }
 
 message Heartbeat {

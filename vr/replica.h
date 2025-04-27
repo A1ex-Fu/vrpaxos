@@ -83,7 +83,8 @@ private:
     int viewEpoch; //note that the view in this implementation functions more similarly to a ballot
 
     Log log;
-    std::map<uint64_t, std::unique_ptr<TransportAddress> > clientAddresses;
+    std::unordered_map<uint64_t, std::unique_ptr<TransportAddress>> clientAddresses;
+
     struct ClientTableEntry
     {
         uint64_t lastReqId;
@@ -91,6 +92,7 @@ private:
         proto::ReplyMessage reply;
     };
     std::map<uint64_t, ClientTableEntry> clientTable;
+    std::map<uint64_t, specpaxos::Request> requestTable;
     
     QuorumSet<viewstamp_t, proto::PrepareOKMessage> prepareOKQuorum;
     QuorumSet<view_t, proto::StartViewChangeMessage> startViewChangeQuorum;
