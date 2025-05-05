@@ -1,0 +1,3 @@
+20250404-022755-6797 186093 * BindToPort      (udptransport.cc:177): Binding to 127.0.0.1:8081
+20250404-022755-6805 186093 * Register        (udptransport.cc:379): Listening on UDP port 8081
+20250404-022803-6438 186093 * SignalCallback  (udptransport.cc:775): Terminating on SIGTERM/SIGINT

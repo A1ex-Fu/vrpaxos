@@ -57,7 +57,7 @@ VRClient::VRClient(const Configuration &config,
     gotAck = false; 
     view = 0;
     
-    requestTimeout = new Timeout(transport, 1000, [this]() {
+    requestTimeout = new Timeout(transport, 5000, [this]() {
             ResendRequest();
         });
     unloggedRequestTimeout = new Timeout(transport, 1000, [this]() {
@@ -133,16 +133,17 @@ VRClient::SendRequest()
     reqMsg.mutable_req()->set_op(pendingRequest->request);
     reqMsg.mutable_req()->set_clientid(clientid);
     reqMsg.mutable_req()->set_clientreqid(pendingRequest->clientReqId);
-    reqMsg.set_reqstr(pendingRequest->request);
+    // reqMsg.set_reqstr(pendingRequest->request);
     
     // Warning("sending message %s to all", reqMsg.reqstr().c_str());
     // XXX Try sending only to (what we think is) the leader first
     // transport->SendMessageToAll(this, reqMsg);
 
-    SendMessageToAllReplicas(reqMsg);
     // first witness always has address 1 in the current address indexing scheme
+    // Notice("send request %d", pendingRequest->clientReqId);
     transport->SendMessageToReplica(this, 1, reqMsg);
-
+    SendMessageToAllReplicas(reqMsg);
+    
     requestTimeout->Reset();
 }
 
@@ -240,10 +241,10 @@ VRClient::HandleReply(const TransportAddress &remote,
         this->gotAck = true;
     }
 
-    std::ostringstream oss;
-    for (int replica : replicas) {
-        oss << replica << " ";
-    }
+    // std::ostringstream oss;
+    // for (int replica : replicas) {
+    //     oss << replica << " ";
+    // }
     // Notice("Client %d received paxosReply for %d from %d - still need %s", clientid, msg.clientreqid(), msg.replicaidx(), oss.str().c_str());
 
 
@@ -255,25 +256,13 @@ VRClient::HandleReply(const TransportAddress &remote,
         requestTimeout->Stop();
         PendingRequest *req = pendingRequest;
         pendingRequest = NULL;
+        // Notice("Completed operation " FMT_OPNUM, req->clientReqId);
         req->continuation(req->request, this->msg->reply());
         this->msg = NULL;
         delete req;
-        // Notice("client %d finished request %d", clientid, req->clientReqId);
+        
     }else{
         // Notice("got reply and no ack");
-        // Warning("in handle reply for %s but no ack", this->msg->reply().c_str());
-        // if(replicas.size()>0){
-        //     string str;
-        //     for (size_t i = 0; i < replicas.size(); ++i) {
-        //         if (i != 0) {
-        //             str += ",";
-        //         }
-        //         str += replicas[i];
-        //     }
-           
-        //     Warning("Waiting for acks from: %s", str);
-        // }
-        
     }
 
 }
@@ -330,10 +319,10 @@ VRClient::HandlePaxosAck(const TransportAddress &remote,
     } 
 
     
-    std::ostringstream oss;
-    for (int replica : replicas) {
-        oss << replica << " ";
-    }
+    // std::ostringstream oss;
+    // for (int replica : replicas) {
+    //     oss << replica << " ";
+    // }
     // Notice("Client %d received paxosAck for %d from %d - still need %s", clientid, msg.clientreqid(), msg.replicaidx(), oss.str().c_str());
 
 
@@ -347,6 +336,7 @@ VRClient::HandlePaxosAck(const TransportAddress &remote,
         // Warning("finished with %s with id %d in ack\n\n\n", this->msg->reply().c_str(), pendingRequest->clientReqId);
         PendingRequest *req = pendingRequest;
         pendingRequest = NULL;
+        // Notice("Completed operation " FMT_OPNUM, req->clientReqId);
         req->continuation(req->request, this->msg->reply());
         this->msg = NULL;
         delete req;

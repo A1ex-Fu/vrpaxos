@@ -132,7 +132,7 @@ VRReplica::VRReplica(Configuration config, int myIdx,
 
     _Latency_Init(&requestLatency, "request");
     _Latency_Init(&executeAndReplyLatency, "executeAndReply");
-
+    
     if (initialize) {
         if (AmLeader()) {
             nullCommitTimeout->Start();
@@ -145,6 +145,7 @@ VRReplica::VRReplica(Configuration config, int myIdx,
             viewChangeTimeout->Start();
         }        
     } else {
+        Notice("init was false\n\n\n");
         this->status = STATUS_RECOVERING;
         this->recoveryNonce = GenerateNonce();
         SendRecoveryMessages();
@@ -228,27 +229,23 @@ VRReplica::CommitUpTo(opnum_t upto)
             // result.
         }
         
-        if(AmLeader() || !isDelegated){
-            /* Send reply */
-            // Notice("%d sending reply for %d, %d and isleader=%d", myIdx, entry->request.clientid(), entry->request.clientreqid(), AmLeader());
-            auto iter = clientAddresses.find(entry->request.clientid());
-            if (iter != clientAddresses.end()) {
-                transport->SendMessage(this, *iter->second, reply);
-            }
-        }else{
-            // Notice("sending ack from here");
-            auto iter = clientAddresses.find(entry->request.clientid());
-            PaxosAck paxosAck;
-            paxosAck.set_clientreqid(entry->request.clientreqid());
-            paxosAck.set_replicaidx(myIdx);
-            // *paxosAck.mutable_req() = msg.req();
-            paxosAck.set_n(configuration.n);
-
-            if (iter != clientAddresses.end()) {
-                // Notice("%d sending ack for %d, %d and isleader=%d", myIdx, entry->request.clientid(), entry->request.clientreqid(), AmLeader());
-                transport->SendMessage(this, *iter->second, paxosAck);
+        auto iter = clientAddresses.find(entry->request.clientid());
+        if (iter != clientAddresses.end()) {
+            const auto &recipient = *iter->second;
+            // Notice("SENDING REPLY/ACK to %s", recipient.ToString().c_str());
+        
+            if (AmLeader() || !isDelegated) {
+                transport->SendMessage(this, recipient, reply);
+            } else {
+                PaxosAck paxosAck;
+                paxosAck.set_clientreqid(entry->request.clientreqid());
+                paxosAck.set_replicaidx(myIdx);
+                paxosAck.set_n(configuration.n);
+        
+                transport->SendMessage(this, recipient, paxosAck);
             }
         }
+        
 
         Latency_End(&executeAndReplyLatency);
     }
@@ -704,6 +701,7 @@ void
 VRReplica::HandleRequest(const TransportAddress &remote,
                          const RequestMessage &msg)
 {
+    // Notice("got request %d", msg.req().clientreqid());
     
     viewstamp_t v;
     Latency_Start(&requestLatency);
@@ -830,10 +828,13 @@ VRReplica::HandleRequest(const TransportAddress &remote,
             Latency_End(&requestLatency);
             
         }
-    }else{
-        //when delegated, add it to the table of id-->request for retrieval upon receival of witnessDecision
+    } else {
         requestTable[msg.req().clientid()] = msg.req();
-        // Notice("added request %d to request table", msg.req().clientreqid());
+    
+        if (hasWitnessDecisionMsg) {
+            HandleWitnessDecision(remote, witnessDecisionMsg);
+            hasWitnessDecisionMsg = false;
+        }
     }
 }
 
@@ -1543,16 +1544,18 @@ VRReplica::HandleWitnessDecision(const TransportAddress &remote,
                                   const WitnessDecision &msg)
 {
     // Warning("[%d] RECEIVED WITNESSDECISION   -   clientid: %d; slot: %d lastOpnum: %d", myIdx, msg.clientreqid(),msg.opnum(), log.LastOpnum()+1);
-    // Notice("%d got witness decision", myIdx);
-    Assert(specpaxos::IsWitness(msg.replicaidx()));
+    // Notice("got witnessdecision %d", msg.clientreqid());
 
+    Assert(specpaxos::IsWitness(msg.replicaidx()));
+    
     if (msg.view() > view) {
         RequestStateTransfer();
         return;
     }
     
-    if(msg.opnum() > log.LastOpnum()+1){
-        // Warning("future request received - ignoring for now");
+    if (msg.opnum() > log.LastOpnum() + 1) {
+        Warning("Future request received - ignoring for now (msg.opnum=%lu, expected=%lu)", 
+                msg.opnum(), log.LastOpnum() + 1);
         return;
     }
 
@@ -1561,10 +1564,12 @@ VRReplica::HandleWitnessDecision(const TransportAddress &remote,
     
 
     if(msgReq.clientreqid() < msg.clientreqid()){
-        Notice("Case where replica received new message AFTER witness did");
+        // Notice("Case where replica received new message AFTER witness did");
+        hasWitnessDecisionMsg = true;
+        witnessDecisionMsg = msg;
         return;
     }
-    // Assert(msgReq.clientreqid() == msg.clientreqid());
+    Assert(msgReq.clientreqid() == msg.clientreqid());
     
 
     // Notice("\n%d putting request: %s with clientid: %d; clientreqid: %d;  at slot: %d\n", myIdx, msg.reqstr().c_str(), msg.clientid(), msg.clientreqid(), msg.opnum());
@@ -1588,6 +1593,7 @@ VRReplica::HandleWitnessDecision(const TransportAddress &remote,
         //priority put - dont need to update table
         log.PriorityPut(v, msgReq, LOG_STATE_COMMITTED);
     }
+    
     
     if(AmLeader()){
         CommitUpTo(this->lastOp);

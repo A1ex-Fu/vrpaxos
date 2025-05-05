@@ -218,12 +218,12 @@
      case PROTO_VR:
          if (isWitness) {
              replica = new specpaxos::vr::VRWitness(config, index,
-                                                    !recover,
+                                                    recover,
                                                     &transport,
                                                     nullApp);
          } else {
              replica = new specpaxos::vr::VRReplica(config, index,
-                                                    !recover,
+                                                    recover,
                                                     &transport,
                                                     batchSize,
                                                     nullApp);

@@ -78,7 +78,9 @@ private:
     bool isDelegated;
     std::map<uint32_t, uint32_t> heartbeatCheck;
     opnum_t cleanUpTo;
-	std::vector<opnum_t> lastCommitteds; 
+	std::vector<opnum_t> lastCommitteds;
+    bool hasWitnessDecisionMsg = false; 
+    specpaxos::vr::proto::WitnessDecision witnessDecisionMsg;
 
     int viewEpoch; //note that the view in this implementation functions more similarly to a ballot
 

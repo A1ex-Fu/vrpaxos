@@ -6,7 +6,7 @@ CC = gcc
 CXX = g++
 LD = g++
 
-CFLAGS := -g -Wall -pthread -iquote.obj/gen -Wno-uninitialized
+CFLAGS := -g -Wall -pthread -iquote.obj/gen -Wno-uninitialized -DNASSERT -O2
 # CXXFLAGS := -std=c++0x
 CXXFLAGS = -std=c++14
 
