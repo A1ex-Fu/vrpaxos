@@ -39,7 +39,8 @@
  #include "vr/witness.h"
  #include <sstream>
 
-
+ #include "clock.h"
+ using namespace Clock; 
 
 
 namespace specpaxos {
@@ -93,6 +94,7 @@ VRClient::Invoke(const string &request,
     this->gotAck = false;
     replicas.clear();
 
+    start = rdtsc_clock();
     SendRequest();
 }
 
@@ -260,6 +262,9 @@ VRClient::HandleReply(const TransportAddress &remote,
         req->continuation(req->request, this->msg->reply());
         this->msg = NULL;
         delete req;
+        end = rdtsc_clock();
+        // Notice("client %d finished request %d\n", clientid, req->clientReqId);
+        // logCycleMeasurement("CompleteRequest", start, end);
         
     }else{
         // Notice("got reply and no ack");
@@ -340,6 +345,9 @@ VRClient::HandlePaxosAck(const TransportAddress &remote,
         req->continuation(req->request, this->msg->reply());
         this->msg = NULL;
         delete req;
+        end = rdtsc_clock();
+        // Notice("client %d finished request %d\n", clientid, req->clientReqId);
+        // logCycleMeasurement("CompleteRequest", start, end);
         // Notice("client %d finished request %d", clientid, req->clientReqId);
     }
 

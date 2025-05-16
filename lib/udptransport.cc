@@ -194,10 +194,10 @@ UDPTransport::UDPTransport(double dropRate, double reorderRate,
     randomEngine.seed(time(NULL));
     reorderBuffer.valid = false;
     if (dropRate > 0) {
-        Warning("Dropping packets with probability %g", dropRate);
+        Notice("Dropping packets with probability %g", dropRate);
     }
     if (reorderRate > 0) {
-        Warning("Reordering packets with probability %g", reorderRate);
+        Notice("Reordering packets with probability %g", reorderRate);
     }
     
     // Set up libevent

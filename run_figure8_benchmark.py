@@ -14,13 +14,14 @@ import matplotlib.pyplot as plt
 CLIENT_BIN = "./bench/client"
 CONFIG_FILE = "testConfig.txt"
 PROTOCOL = "vr" 
-OUTPUT_DIR = "client_logs"
+OUTPUT_DIR = "outputs"
 RESULT_DIR = "outputs"
 CSV_EXPORT = True
-TOTAL_REQUESTS = 100
+TOTAL_REQUESTS = 10
 MIN_REQUESTS_PER_CLIENT = 3
 # CLIENT_COUNTS = [2, 5, 10, 20, 50, 100, 150, 200, 250, 300]
-CLIENT_COUNTS = [2, 5, 10, 20, 50, 100, 150, 200, 250, 300]
+# CLIENT_COUNTS = [2, 5, 10, 20, 50, 100, 150, 200, 250, 300]
+CLIENT_COUNTS = [100]
 # CLIENT_COUNTS = [10]
 REPLICA_COUNT = 3
 WARMUP_TIME = 5 
@@ -41,20 +42,21 @@ def start_replicas():
     log_files = []
 
     def launch_replica(index, is_witness=False):
-        log_path = os.path.join(OUTPUT_DIR, f"replica_{index}{'_witness' if is_witness else ''}.err")
+        log_path = os.path.join(OUTPUT_DIR, f"replica_{index}{'_witness' if is_witness else ''}.log")
         log_file = open(log_path, "w")
         args = ["./bench/replica", "-c", CONFIG_FILE, "-i", str(index), "-m", PROTOCOL]
         if is_witness:
             args.append("-w")
-        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=log_file, text=True)
+        proc = subprocess.Popen(args, stdout=log_file, stderr=log_file, text=True)
         replicas.append((proc, log_file))
 
     launch_replica(0)
     launch_replica(1, is_witness=True)
     launch_replica(2)
 
-    time.sleep(5) 
+    time.sleep(5)
     return replicas
+
 
 
 

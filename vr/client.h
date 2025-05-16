@@ -86,6 +86,9 @@ protected:
     Timeout *requestTimeout;
     Timeout *unloggedRequestTimeout;
 
+    uint64_t start;
+    uint64_t end;
+    
     void SendRequest();
     void ResendRequest();
     void HandleReply(const TransportAddress &remote,

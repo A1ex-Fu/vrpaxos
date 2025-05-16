@@ -76,7 +76,7 @@ private:
     int viewEpoch;
     
     // Log log;
-    std::map<int, std::map<int, int>> clientRequestMap;
+    std::map<uint64_t, std::map<uint64_t, uint64_t>> clientRequestMap;
 
     QuorumSet<view_t, proto::StartViewChangeMessage> startViewChangeQuorum;
 
@@ -89,7 +89,8 @@ private:
     bool printingTraces;
     std::ofstream traceFile;
 
-
+    uint64_t start;
+    uint64_t end;
 
 
     void CommitUpTo(opnum_t upto);

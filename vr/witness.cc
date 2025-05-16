@@ -52,6 +52,10 @@
 #define RWarning(fmt, ...) Warning("[%d] " fmt, myIdx, ##__VA_ARGS__)
 #define RPanic(fmt, ...) Panic("[%d] " fmt, myIdx, ##__VA_ARGS__)
 
+#include "clock.h"
+using namespace Clock; 
+
+
 namespace specpaxos {
 namespace vr {
 
@@ -178,6 +182,7 @@ VRWitness::ReceiveMessage(const TransportAddress &remote,
         request.ParseFromString(data);
         // WriteMessageContents(request);
         // Notice("got request %d", request.req().clientreqid());
+        start = rdtsc_clock();
         HandleRequest(remote, request);
     } else if (type == startViewChange.GetTypeName()) {
         startViewChange.ParseFromString(data);
@@ -258,8 +263,11 @@ VRWitness::HandleRequest(const TransportAddress &remote,
         reply.set_clientreqid(msg.req().clientreqid());
         reply.set_clientid(msg.req().clientid());
         // reply.set_reqstr(msg.reqstr());
-        // Notice("sending WitnessDecision for %d", msg.req().clientreqid());
+        
+        // Notice("sending WitnessDecision for req %lu for client %lu with slot %d", reply.clientreqid(), reply.clientid(), reply.opnum());
         SendMessageToAllReplicas(reply);
+        end = rdtsc_clock();
+        // logCycleMeasurement("RequestToDecision", start, end);
     } else {
         ChainMessage reply;
         reply.set_view(view);

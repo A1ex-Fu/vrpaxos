@@ -3,12 +3,12 @@ import os
 import time
 
 # Run basic 2R+1W and 1 client case with the following client command:
-CLIENT_CMD = ["./bench/client", "-c", "./testConfig2.txt", "-m", "vr", "-n", "1000", "-t", "1", "-w", "5", "-l", "latency.txt"]
+CLIENT_CMD = ["./bench/client", "-c", "./testConfig.txt", "-m", "vr", "-n", "1000", "-t", "1", "-w", "5", "-l", "latency.txt"]
 
 
 REPLICA_COUNT = 3  # 2 replicas + 1 witness
 OUTPUT_DIR = "client_logs"
-CONFIG_FILE = "testConfig2.txt"
+CONFIG_FILE = "testConfig.txt"
 PROTOCOL = "vr"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)

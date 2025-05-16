@@ -44,6 +44,9 @@
 #include <memory>
 #include <list>
 #include <unordered_map>
+#include "robin_hood.h"
+
+
 
 namespace specpaxos {
 namespace vr {
@@ -79,8 +82,6 @@ private:
     std::map<uint32_t, uint32_t> heartbeatCheck;
     opnum_t cleanUpTo;
 	std::vector<opnum_t> lastCommitteds;
-    bool hasWitnessDecisionMsg = false; 
-    specpaxos::vr::proto::WitnessDecision witnessDecisionMsg;
 
     int viewEpoch; //note that the view in this implementation functions more similarly to a ballot
 
@@ -94,7 +95,6 @@ private:
         proto::ReplyMessage reply;
     };
     std::map<uint64_t, ClientTableEntry> clientTable;
-    std::map<uint64_t, specpaxos::Request> requestTable;
     
     QuorumSet<viewstamp_t, proto::PrepareOKMessage> prepareOKQuorum;
     QuorumSet<view_t, proto::StartViewChangeMessage> startViewChangeQuorum;
@@ -112,7 +112,22 @@ private:
     Latency_t requestLatency;
     Latency_t executeAndReplyLatency;
 
+
+    bool hasWitnessDecisionMsg = false; 
+    specpaxos::vr::proto::WitnessDecision witnessDecisionMsg;
+
+    // cid --> req
     std::unordered_map<uint64_t, Request> pendingClientRequests;
+    // cid --> wd
+    robin_hood::unordered_map<uint64_t, specpaxos::vr::proto::WitnessDecision> pendingWitnessDecisions;
+    // sn --> wd
+    robin_hood::unordered_map<uint64_t, specpaxos::vr::proto::WitnessDecision> pendingDecisionSlots;
+
+
+
+    uint64_t startLastRDtoReply;
+    uint64_t startRequestToDecision;
+    
 
     uint64_t GenerateNonce() const;
     bool AmLeader() const;

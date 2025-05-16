@@ -48,7 +48,7 @@
 
 // The maximum number of unique distribution types in a single latency
 // distribution.
-#define LATENCY_DIST_POOL_SIZE 5
+#define LATENCY_DIST_POOL_SIZE 10
 
 // The width of a printed histogram in characters.
 #define LATENCY_HISTOGRAM_WIDTH 50
