@@ -599,51 +599,51 @@ bool VRWitness::SendMessageToAllReplicas(const ::google::protobuf::Message &msg)
 
 //________________________________________
 //trace code
-void VRWitness::UpdateTraceFile(std::string filename){
-    if (traceFile.is_open()) {
-        traceFile.close();
-    }
+// void VRWitness::UpdateTraceFile(std::string filename){
+//     if (traceFile.is_open()) {
+//         traceFile.close();
+//     }
 
-    traceFile.open(filename, std::ios::out);
-    if (!traceFile.is_open()) {
-        std::cerr << "Failed to open file: " << filename << std::endl;
-        Panic("Failed to open file %s", filename.c_str());
-    }else{
-        //push string to clear file (i think its necessary but idk - no impact anyways)
-        traceFile << "";
-        traceFile.close();
-    }
+//     traceFile.open(filename, std::ios::out);
+//     if (!traceFile.is_open()) {
+//         std::cerr << "Failed to open file: " << filename << std::endl;
+//         Panic("Failed to open file %s", filename.c_str());
+//     }else{
+//         //push string to clear file (i think its necessary but idk - no impact anyways)
+//         traceFile << "";
+//         traceFile.close();
+//     }
 
 
-    traceFile.open(filename, std::ios::out | std::ios::app);
-    if (!traceFile.is_open()) {
-        std::cerr << "Failed to open file: " << filename << std::endl;
-        Panic("Failed to open file %s", filename.c_str());
-    }
-    this->filename = filename;
-}
+//     traceFile.open(filename, std::ios::out | std::ios::app);
+//     if (!traceFile.is_open()) {
+//         std::cerr << "Failed to open file: " << filename << std::endl;
+//         Panic("Failed to open file %s", filename.c_str());
+//     }
+//     this->filename = filename;
+// }
 
 /**
  * @brief writes input string to trace file with the prefix "Witness {myIdx} "
  * 
  * @param line string to be written
  */
-void VRWitness::WriteToTrace(const std::string& line) {
-    if(!printingTraces){
-        return;
-    }
-    // Check if the trace file is open
-    if (!traceFile.is_open()) {
-        // attempt to open the trace file
-        traceFile.open(filename, std::ios::out | std::ios::app);
-        if (!traceFile) {
-            throw std::ios_base::failure("failed to open trace file");
-        }
-    }
+// void VRWitness::WriteToTrace(const std::string& line) {
+//     if(!printingTraces){
+//         return;
+//     }
+//     // Check if the trace file is open
+//     if (!traceFile.is_open()) {
+//         // attempt to open the trace file
+//         traceFile.open(filename, std::ios::out | std::ios::app);
+//         if (!traceFile) {
+//             throw std::ios_base::failure("failed to open trace file");
+//         }
+//     }
 
-    // write the line to the trace file
-    traceFile << "Witness " << myIdx << " " << line << std::endl;
-}
+//     // write the line to the trace file
+//     traceFile << "Witness " << myIdx << " " << line << std::endl;
+// }
 
 
 /**

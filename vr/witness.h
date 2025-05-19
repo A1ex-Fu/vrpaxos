@@ -58,9 +58,9 @@ public:
 
     //______________________
     //for testing
-    std::string filename = "trace.txt";
+    // std::string filename = "trace.txt";
     size_t GetLogSize();
-    void UpdateTraceFile(std::string filename);
+    // void UpdateTraceFile(std::string filename);
 
 
 
@@ -110,7 +110,7 @@ private:
                          const proto::Heartbeat &msg);
     bool SendMessageToAllReplicas(const ::google::protobuf::Message &m);
     
-    void WriteToTrace(const std::string& line);
+    // void WriteToTrace(const std::string& line);
     std::string getRole(int input);
     void SendAndWrite(const ::google::protobuf::Message &msg, int code);
     void WriteMessageContents(const ::google::protobuf::Message &msg);

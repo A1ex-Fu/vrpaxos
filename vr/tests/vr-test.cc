@@ -116,7 +116,7 @@
                  std::replace(formatted.begin(), formatted.end(), '/', '_');
                  formatted = folder + formatted;
              
-                 witness->UpdateTraceFile(formatted);
+                //  witness->UpdateTraceFile(formatted);
                  replicas.push_back(witness);
              }else{
                  replicas.push_back(new VRReplica(*config, i, true, transport, GetParam(), apps[i])); 
