@@ -123,7 +123,7 @@ private:
     // sn --> wd
     robin_hood::unordered_map<uint64_t, specpaxos::vr::proto::WitnessDecision> pendingDecisionSlots;
 
-
+    std::map<uint64_t, specpaxos::Request> requestTable;
 
     uint64_t startLastRDtoReply;
     uint64_t startRequestToDecision;
