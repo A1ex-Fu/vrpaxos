@@ -1730,33 +1730,32 @@ VRReplica::HandleWitnessDecision(const TransportAddress &remote,
 
     auto reqIt = pendingClientRequests.find(msg.clientid());
     if (reqIt == pendingClientRequests.end()) {
-        // No request yet, can't proceed
+        // no request yet, can't proceed
         return;
     }
 
     const specpaxos::Request &storedReq = reqIt->second;
 
     if (msg.clientreqid() > storedReq.clientreqid()) {
-        // Outdated request, erase and wait for new one
+        // outdated request, erase and wait for new one
         pendingClientRequests.erase(reqIt);
         return;
     }
 
     if (msg.clientreqid() < storedReq.clientreqid()) {
-        // Outdated witness decision, clean up
+        // outdated witness decision, clean up
         pendingDecisionSlots.erase(msg.opnum());
         pendingWitnessDecisions.erase(msg.clientid());
         return;
     }
 
-    // Match: store decision if not already present
     pendingDecisionSlots.insert({msg.opnum(), msg});
     pendingWitnessDecisions.insert({msg.clientid(), msg});
 
     std::vector<uint64_t> staleClients;
     std::vector<uint32_t> staleSlots;
 
-    // Process decisions in order
+    // process any matching decisions in order
     uint32_t nextSlot = log.LastOpnum() + 1;
     while (true) {
         auto slotIt = pendingDecisionSlots.find(nextSlot);
@@ -1781,7 +1780,7 @@ VRReplica::HandleWitnessDecision(const TransportAddress &remote,
             continue;
         }
 
-        // Commit the request
+        // commit the request
         viewstamp_t v;
         ++this->lastOp;
         v.view = this->view;
@@ -1797,7 +1796,7 @@ VRReplica::HandleWitnessDecision(const TransportAddress &remote,
         ++nextSlot;
     }
 
-    // Deferred cleanup
+    // cleanup all stale entries
     for (uint64_t cid : staleClients) {
         pendingWitnessDecisions.erase(cid);
     }

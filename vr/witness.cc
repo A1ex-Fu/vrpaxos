@@ -99,14 +99,14 @@ VRWitness::VRWitness(Configuration config, int myIdx,
     //Flag to turn off trace printing so the tests can be run in a reasonable amount of time
     this->printingTraces = true;
 
-    traceFile.open(filename, std::ios::out);
-    if (!traceFile.is_open()) {
-        std::cerr << "Failed to open file: " << filename << std::endl;
-        Panic("Failed to open file %s", filename.c_str());
-    }else{
-        traceFile << "temp str to clear";
-        traceFile.close();
-    }
+    // traceFile.open(filename, std::ios::out);
+    // if (!traceFile.is_open()) {
+    //     std::cerr << "Failed to open file: " << filename << std::endl;
+    //     Panic("Failed to open file %s", filename.c_str());
+    // }else{
+    //     traceFile << "temp str to clear";
+    //     traceFile.close();
+    // }
 
 
 }
