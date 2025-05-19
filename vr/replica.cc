@@ -1561,69 +1561,69 @@ VRReplica::HandleRecoveryResponse(const TransportAddress &remote,
     }
 }
 
-// void
-// VRReplica::HandleWitnessDecision(const TransportAddress &remote,
-//                                   const WitnessDecision &msg)
-// {
-//     // Warning("[%d] RECEIVED WITNESSDECISION   -   clientid: %d; slot: %d lastOpnum: %d", myIdx, msg.clientreqid(),msg.opnum(), log.LastOpnum()+1);
-//     // Notice("got witnessdecision %d", msg.clientreqid());
+void
+VRReplica::HandleWitnessDecision(const TransportAddress &remote,
+                                  const WitnessDecision &msg)
+{
+    // Warning("[%d] RECEIVED WITNESSDECISION   -   clientid: %d; slot: %d lastOpnum: %d", myIdx, msg.clientreqid(),msg.opnum(), log.LastOpnum()+1);
+    // Notice("got witnessdecision %d", msg.clientreqid());
 
-//     Assert(specpaxos::IsWitness(msg.replicaidx()));
+    Assert(specpaxos::IsWitness(msg.replicaidx()));
     
-//     if (msg.view() > view) {
-//         RequestStateTransfer();
-//         return;
-//     }
+    if (msg.view() > view) {
+        RequestStateTransfer();
+        return;
+    }
     
-//     if (msg.opnum() > log.LastOpnum() + 1) {
-//         Warning("Future request received - ignoring for now (msg.opnum=%lu, expected=%lu)", 
-//                 msg.opnum(), log.LastOpnum() + 1);
-//         return;
-//     }
+    if (msg.opnum() > log.LastOpnum() + 1) {
+        Warning("Future request received - ignoring for now (msg.opnum=%lu, expected=%lu)", 
+                msg.opnum(), log.LastOpnum() + 1);
+        return;
+    }
 
-//     //retrieve request using reqID
-//     specpaxos::Request msgReq = pendingClientRequests[msg.clientid()];
-    
-
-//     if(msgReq.clientreqid() < msg.clientreqid()){
-//         // Notice("Case where replica received new message AFTER witness did");
-//         hasWitnessDecisionMsg = true;
-//         witnessDecisionMsg = msg;
-//         return;
-//     }
-//     Assert(msgReq.clientreqid() == msg.clientreqid());
+    //retrieve request using reqID
+    specpaxos::Request msgReq = pendingClientRequests[msg.clientid()];
     
 
-//     // Notice("\n%d putting request: %s with clientid: %d; clientreqid: %d;  at slot: %d\n", myIdx, msg.reqstr().c_str(), msg.clientid(), msg.clientreqid(), msg.opnum());
-//     if(msg.opnum() == log.LastOpnum()+1){
-//         viewstamp_t v;
-//         ++this->lastOp;
-//         v.view = this->view;
-//         v.opnum = msg.opnum();
-//         // Notice("%d adding new op for %d,%d to log of size %lu",
-//             // myIdx, msgReq.clientid(), msgReq.clientreqid(), log.Size());
+    if(msgReq.clientreqid() < msg.clientreqid()){
+        // Notice("Case where replica received new message AFTER witness did");
+        hasWitnessDecisionMsg = true;
+        witnessDecisionMsg = msg;
+        return;
+    }
+    Assert(msgReq.clientreqid() == msg.clientreqid());
+    
+
+    // Notice("\n%d putting request: %s with clientid: %d; clientreqid: %d;  at slot: %d\n", myIdx, msg.reqstr().c_str(), msg.clientid(), msg.clientreqid(), msg.opnum());
+    if(msg.opnum() == log.LastOpnum()+1){
+        viewstamp_t v;
+        ++this->lastOp;
+        v.view = this->view;
+        v.opnum = msg.opnum();
+        // Notice("%d adding new op for %d,%d to log of size %lu",
+            // myIdx, msgReq.clientid(), msgReq.clientreqid(), log.Size());
      
 
-//         log.Append(v, msgReq, LOG_STATE_COMMITTED);
+        log.Append(v, msgReq, LOG_STATE_COMMITTED);
         
-//         UpdateClientTable(msgReq);
-//     }else{
-//         viewstamp_t v;
-//         v.view = this->view;
-//         v.opnum = msg.opnum();
+        UpdateClientTable(msgReq);
+    }else{
+        viewstamp_t v;
+        v.view = this->view;
+        v.opnum = msg.opnum();
 
-//         //priority put - dont need to update table
-//         log.PriorityPut(v, msgReq, LOG_STATE_COMMITTED);
-//     }
+        //priority put - dont need to update table
+        log.PriorityPut(v, msgReq, LOG_STATE_COMMITTED);
+    }
     
     
-//     if(AmLeader()){
-//         CommitUpTo(this->lastOp);
-//     }else{
-//         //should also be the same as elseif case in handledecision
-//         CommitUpTo(this->lastOp);
-//     }
-// }
+    if(AmLeader()){
+        CommitUpTo(this->lastOp);
+    }else{
+        //should also be the same as elseif case in handledecision
+        CommitUpTo(this->lastOp);
+    }
+}
 
 
 // void
@@ -1713,107 +1713,103 @@ VRReplica::HandleRecoveryResponse(const TransportAddress &remote,
 
 
 
+// void
+// VRReplica::HandleWitnessDecision(const TransportAddress &remote,
+//                                   const WitnessDecision &msg)
+// {
+//     Assert(specpaxos::IsWitness(msg.replicaidx()));
 
-#include <unordered_map>
-#include <vector>
+//     if (msg.view() > view) {
+//         RequestStateTransfer();
+//         return;
+//     }
 
-void
-VRReplica::HandleWitnessDecision(const TransportAddress &remote,
-                                  const WitnessDecision &msg)
-{
-    Assert(specpaxos::IsWitness(msg.replicaidx()));
+//     auto reqIt = pendingClientRequests.find(msg.clientid());
+//     if (reqIt == pendingClientRequests.end()) {
+//         // no request yet, can't proceed
+//         return;
+//     }
 
-    if (msg.view() > view) {
-        RequestStateTransfer();
-        return;
-    }
+//     const specpaxos::Request &storedReq = reqIt->second;
 
-    auto reqIt = pendingClientRequests.find(msg.clientid());
-    if (reqIt == pendingClientRequests.end()) {
-        // no request yet, can't proceed
-        return;
-    }
+//     if (msg.clientreqid() > storedReq.clientreqid()) {
+//         // outdated request, erase and wait for new one
+//         pendingClientRequests.erase(reqIt);
+//         return;
+//     }
 
-    const specpaxos::Request &storedReq = reqIt->second;
+//     if (msg.clientreqid() < storedReq.clientreqid()) {
+//         // outdated witness decision, clean up
+//         pendingDecisionSlots.erase(msg.opnum());
+//         pendingWitnessDecisions.erase(msg.clientid());
+//         return;
+//     }
 
-    if (msg.clientreqid() > storedReq.clientreqid()) {
-        // outdated request, erase and wait for new one
-        pendingClientRequests.erase(reqIt);
-        return;
-    }
+//     pendingDecisionSlots.insert({msg.opnum(), msg});
+//     pendingWitnessDecisions.insert({msg.clientid(), msg});
 
-    if (msg.clientreqid() < storedReq.clientreqid()) {
-        // outdated witness decision, clean up
-        pendingDecisionSlots.erase(msg.opnum());
-        pendingWitnessDecisions.erase(msg.clientid());
-        return;
-    }
+//     std::vector<uint64_t> staleClients;
+//     std::vector<uint32_t> staleSlots;
 
-    pendingDecisionSlots.insert({msg.opnum(), msg});
-    pendingWitnessDecisions.insert({msg.clientid(), msg});
+//     // process any matching decisions in order
+//     uint32_t nextSlot = log.LastOpnum() + 1;
+//     while (true) {
+//         auto slotIt = pendingDecisionSlots.find(nextSlot);
+//         if (slotIt == pendingDecisionSlots.end()) {
+//             break;
+//         }
 
-    std::vector<uint64_t> staleClients;
-    std::vector<uint32_t> staleSlots;
+//         const WitnessDecision &wd = slotIt->second;
+//         uint64_t cid = wd.clientid();
 
-    // process any matching decisions in order
-    uint32_t nextSlot = log.LastOpnum() + 1;
-    while (true) {
-        auto slotIt = pendingDecisionSlots.find(nextSlot);
-        if (slotIt == pendingDecisionSlots.end()) {
-            break;
-        }
+//         auto reqIt2 = pendingClientRequests.find(cid);
+//         if (reqIt2 == pendingClientRequests.end()) {
+//             break;
+//         }
 
-        const WitnessDecision &wd = slotIt->second;
-        uint64_t cid = wd.clientid();
+//         const Request &r = reqIt2->second;
 
-        auto reqIt2 = pendingClientRequests.find(cid);
-        if (reqIt2 == pendingClientRequests.end()) {
-            break;
-        }
+//         if (r.clientreqid() != wd.clientreqid()) {
+//             staleClients.push_back(cid);
+//             staleSlots.push_back(nextSlot);
+//             ++nextSlot;
+//             continue;
+//         }
 
-        const Request &r = reqIt2->second;
+//         // commit the request
+//         viewstamp_t v;
+//         ++this->lastOp;
+//         v.view = this->view;
+//         v.opnum = nextSlot;
 
-        if (r.clientreqid() != wd.clientreqid()) {
-            staleClients.push_back(cid);
-            staleSlots.push_back(nextSlot);
-            ++nextSlot;
-            continue;
-        }
+//         log.Append(v, r, LOG_STATE_COMMITTED);
+//         UpdateClientTable(r);
 
-        // commit the request
-        viewstamp_t v;
-        ++this->lastOp;
-        v.view = this->view;
-        v.opnum = nextSlot;
+//         pendingDecisionSlots.erase(slotIt);
+//         pendingClientRequests.erase(reqIt2);
+//         pendingWitnessDecisions.erase(cid);
 
-        log.Append(v, r, LOG_STATE_COMMITTED);
-        UpdateClientTable(r);
+//         ++nextSlot;
+//     }
 
-        pendingDecisionSlots.erase(slotIt);
-        pendingClientRequests.erase(reqIt2);
-        pendingWitnessDecisions.erase(cid);
+//     // cleanup all stale entries
+//     for (uint64_t cid : staleClients) {
+//         pendingWitnessDecisions.erase(cid);
+//     }
+//     for (uint32_t s : staleSlots) {
+//         pendingDecisionSlots.erase(s);
+//     }
 
-        ++nextSlot;
-    }
+// #ifndef NDEBUG
+//     Assert(pendingDecisionSlots.size() == pendingWitnessDecisions.size());
+//     for (const auto &entry : pendingDecisionSlots) {
+//         uint64_t cid = entry.second.clientid();
+//         Assert(pendingWitnessDecisions.count(cid) == 1);
+//     }
+// #endif
 
-    // cleanup all stale entries
-    for (uint64_t cid : staleClients) {
-        pendingWitnessDecisions.erase(cid);
-    }
-    for (uint32_t s : staleSlots) {
-        pendingDecisionSlots.erase(s);
-    }
-
-#ifndef NDEBUG
-    Assert(pendingDecisionSlots.size() == pendingWitnessDecisions.size());
-    for (const auto &entry : pendingDecisionSlots) {
-        uint64_t cid = entry.second.clientid();
-        Assert(pendingWitnessDecisions.count(cid) == 1);
-    }
-#endif
-
-    CommitUpTo(this->lastOp);
-}
+//     CommitUpTo(this->lastOp);
+// }
 
 
 
