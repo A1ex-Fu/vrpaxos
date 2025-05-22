@@ -440,7 +440,7 @@ VRWitness::HandleChainMessage(const TransportAddress &remote,
         if(myIdx == (configuration.n-2)){
             //last witness
             //send witnessDecision to all replicas
-            Notice("set opnum p2 %d", slotNum);
+            // Notice("set opnum p2 %d", slotNum);
             WitnessDecision reply;
             reply.set_view(view);
             reply.set_opnum(slotNum);

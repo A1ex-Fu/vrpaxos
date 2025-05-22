@@ -38,13 +38,13 @@
 #include "common/quorumset.h"
 #include "vr/vr-proto.pb.h"
 #include "lib/simtransport.h"
+#include "vr/ring_buffer.h"
 
 
 #include <map>
 #include <memory>
 #include <list>
 #include <unordered_map>
-#include "robin_hood.h"
 
 
 
@@ -116,12 +116,10 @@ private:
     bool hasWitnessDecisionMsg = false; 
     specpaxos::vr::proto::WitnessDecision witnessDecisionMsg;
 
-    // cid --> req
-    std::unordered_map<uint64_t, Request> pendingClientRequests;
-    // cid --> wd
-    robin_hood::unordered_map<uint64_t, specpaxos::vr::proto::WitnessDecision> pendingWitnessDecisions;
-    // sn --> wd
-    robin_hood::unordered_map<uint64_t, specpaxos::vr::proto::WitnessDecision> pendingDecisionSlots;
+    // ring buffers for pending requests and decisions
+    ClientRequestBuffer pendingClientRequests;
+    WitnessDecisionBuffer pendingWitnessDecisions;
+    WitnessDecisionBuffer pendingDecisionSlots;
 
     std::map<uint64_t, specpaxos::Request> requestTable;
 
